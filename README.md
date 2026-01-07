@@ -1,70 +1,91 @@
-# Getting Started with Create React App
+# 협업 도구 (Collaboration Tool)
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Next.js와 Tailwind CSS를 사용한 실시간 협업 도구입니다. 여러 사용자가 동시에 그림을 그리거나 문서를 편집할 수 있으며, Slack과 같은 채팅 기능도 제공합니다.
 
-## Available Scripts
+## 주요 기능
 
-In the project directory, you can run:
+- 🎨 **실시간 그림 그리기**: 여러 사용자가 동시에 캔버스에 그림을 그릴 수 있습니다
+- 📝 **공동 문서 편집**: 실시간으로 문서를 함께 편집할 수 있습니다
+- 💬 **채팅 기능**: Slack과 같은 실시간 채팅 기능
+- 👥 **사용자 목록**: 현재 접속한 사용자 목록을 실시간으로 확인할 수 있습니다
 
-### `npm start`
+## 기술 스택
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- **Frontend**: Next.js 14, React 18, Tailwind CSS
+- **Backend**: Socket.IO (WebSocket)
+- **그림 그리기**: Fabric.js
+- **문서 편집**: React Quill
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## 설치 및 실행
 
-### `npm test`
+### 1. 프로젝트 의존성 설치
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```bash
+npm install
+```
 
-### `npm run build`
+### 2. 서버 의존성 설치
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```bash
+cd server
+npm install
+cd ..
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### 3. 개발 서버 실행
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+터미널 1 - Next.js 개발 서버:
+```bash
+npm run dev
+```
 
-### `npm run eject`
+터미널 2 - Socket.IO 서버:
+```bash
+cd server
+npm start
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+### 4. 브라우저에서 접속
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- Next.js 앱: http://localhost:3000
+- Socket.IO 서버: http://localhost:3001
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## 프로젝트 구조
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+```
+collab_tool/
+├── src/
+│   ├── app/              # Next.js App Router 페이지
+│   │   ├── page.tsx      # 홈 페이지 (로그인)
+│   │   ├── workspace/    # 작업 공간 페이지
+│   │   └── layout.tsx    # 루트 레이아웃
+│   └── components/       # React 컴포넌트
+│       ├── ChatPanel.tsx      # 채팅 패널
+│       ├── DrawingBoard.tsx   # 그림 그리기 보드
+│       ├── DocumentEditor.tsx # 문서 편집기
+│       └── UserList.tsx       # 사용자 목록
+├── server/               # Socket.IO 서버
+│   └── index.js
+└── package.json
+```
 
-## Learn More
+## 사용 방법
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+1. 브라우저에서 http://localhost:3000 접속
+2. 사용자 이름을 입력하고 "시작하기" 클릭
+3. 작업 공간에서 다음 기능 사용:
+   - **그림 그리기 탭**: 캔버스에 그림을 그릴 수 있습니다
+   - **문서 편집 탭**: 공동으로 문서를 편집할 수 있습니다
+   - **채팅 패널**: 다른 사용자와 실시간으로 채팅할 수 있습니다
+   - **사용자 목록**: 현재 접속한 사용자를 확인할 수 있습니다
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## 개발 스크립트
 
-### Code Splitting
+- `npm run dev`: Next.js 개발 서버 시작
+- `npm run build`: 프로덕션 빌드
+- `npm run start`: 프로덕션 서버 시작
+- `npm run lint`: ESLint 실행
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## 라이선스
 
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+MIT

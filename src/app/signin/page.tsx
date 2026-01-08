@@ -4,12 +4,22 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function RegisterPage() {
+  interface User{
+    userId?: String;
+    password?: String;
+    email?: String;
+    gender?: String;
+    birthDate?: Date;
+  }
+
+  //const [userData, setUserData] = useState<User>({});  
   const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [email, setEmail] = useState('')
   const [gender, setGender] = useState('')
   const [birthDate, setBirthDate] = useState('')
+  const [message, setMessage] = useState('');
   
   // 아이디 중복 확인 상태 (Spring 연동 시 사용)
   const [isIdChecked, setIsIdChecked] = useState(false)
@@ -37,7 +47,7 @@ export default function RegisterPage() {
     setIsIdChecked(true);
   }
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!isIdChecked) {
       alert("아이디 중복 확인을 해주세요.");
       return;
@@ -51,10 +61,58 @@ export default function RegisterPage() {
       return;
     }
 
+    const finalUserData: User = {
+      userId,
+      password,
+      email,
+      gender,
+      birthDate: birthDate ? new Date(birthDate) : undefined 
+    };
+
+    console.log("userdata : ", finalUserData);
+
+    const reponse = await fetch('/api/register', {
+      method: 'POST',
+      body: JSON.stringify({finalUserData}),
+      headers: { 'Content-Type': 'application/json'},
+    });
+
+    const {isAccede} = await reponse.json();
+
     // 회원가입 성공 로직
     console.log({ userId, password, email, gender, birthDate });
     alert("회원가입이 완료되었습니다!");
-    router.push('/workspace');
+    //router.push('/workspace');
+  }
+
+  //회원 ID 중복 검사 로직
+  const checkDuplicate = async () => {
+    const response = await fetch('/api/check_id', {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    const { isDuplicate } = await response.json();
+    console.log(isDuplicate);
+
+    if (isDuplicate) {
+      setMessage('이미 사용 중인 아이디입니다.');
+      alert(message);
+    } else {
+      setMessage('사용 가능한 아이디입니다.');
+      alert(message);
+    }
+  };
+
+  const handleJoinMember= async () => {
+    const reponse = await fetch('/api/register', {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: { 'Content-Type': 'application/json'},
+    });
+
+    const {isAccede} = await reponse.json();
   }
 
   return (
@@ -75,7 +133,7 @@ export default function RegisterPage() {
                 placeholder="아이디 입력"
               />
               <button 
-                onClick={handleCheckId}
+                onClick={checkDuplicate}
                 className="px-3 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors whitespace-nowrap"
               >
                 중복 확인
@@ -139,9 +197,9 @@ export default function RegisterPage() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900"
               >
                 <option value="">선택</option>
-                <option value="male">남성</option>
-                <option value="female">여성</option>
-                <option value="other">기타</option>
+                <option value="M">남성</option>
+                <option value="F">여성</option>
+                <option value="O">기타</option>
               </select>
             </div>
             <div>

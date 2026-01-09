@@ -1,39 +1,26 @@
-// app/api/register/route.ts
 import { NextResponse } from 'next/server';
-import pool from '@/app/lib/db';
-
+import pool from '@/app/lib/db'; // 위에서 만든 pool 불러오기
+import { hashPassword } from '@/app/lib/encrypt'
 export async function POST(request: Request) {
   try {
-    // 1. 프론트엔드에서 보낸 데이터 받기
-    const { userId, password, name } = await request.json();
+    const body = await request.json();
+    // 구조 분해 할당 시 클라이언트에서 보낸 키 값과 일치해야 함
+    const { userId, password, email, gender, birthDate } = body;
 
-    // 2. 간단한 유효성 검사
-    if (!userId || !password) {
-      return NextResponse.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 });
+    // 필수 값 체크 (여기서 누락되면 400 에러를 명시적으로 던질 수 있음)
+    if (!userId || !password || !email) {
+      return NextResponse.json({ message: "필수 정보가 누락되었습니다." }, { status: 400 });
     }
 
-    // 3. MySQL INSERT 쿼리 실행
-    // '?'는 SQL Injection 공격을 방지하기 위한 Prepared Statement 방식입니다.
-    const query = 'INSERT INTO users (user_id, password, name) VALUES (?, ?, ?)';
-    const values = [userId, password, name];
+    //비밀번호 암호화 SHA256 알고리즘 사용
+    const encryptedPassword = hashPassword(password);
 
-    const [result]: any = await pool.execute(query, values);
+    const query = `INSERT INTO users (user_id, password, email, gender, birth) VALUES (?, ?, ?, ?, ?)`;
+    await pool.execute(query, [userId, encryptedPassword, email, gender, birthDate]);
 
-    // 4. 결과 반환 (insertId는 새로 생성된 PK 값입니다)
-    return NextResponse.json({ 
-      success: true, 
-      message: '회원가입이 완료되었습니다.',
-      insertedId: result.insertId 
-    });
-
-  } catch (error: any) {
-    console.error('Registration Error:', error);
-    
-    // 에러 처리 (예: 아이디가 그 사이에 중복된 경우 등)
-    if (error.code === 'ER_DUP_ENTRY') {
-      return NextResponse.json({ error: '이미 존재하는 아이디입니다.' }, { status: 409 });
-    }
-
-    return NextResponse.json({ error: '데이터 저장 중 오류가 발생했습니다.' }, { status: 500 });
+    return NextResponse.json({ isAccede: true }, { status: 200 });
+  } catch (error) {
+    console.error("Registration Error:", error);
+    return NextResponse.json({ message: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }

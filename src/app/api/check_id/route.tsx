@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       [userId]
     );
 
-    const isDuplicate = rows.length > 0;
+    const isDuplicate = rows.length > 0 ? true : false;
 
     return NextResponse.json({ isDuplicate });
   } catch (error) {

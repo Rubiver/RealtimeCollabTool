@@ -9,7 +9,7 @@ export default function RegisterPage() {
     password?: String;
     email?: String;
     gender?: String;
-    birthDate?: Date;
+    birthDate?: String;
   }
 
   //const [userData, setUserData] = useState<User>({});  
@@ -34,18 +34,18 @@ export default function RegisterPage() {
   const isPasswordValid = passwordRegex.test(password);
   const isMatch = password === confirmPassword && confirmPassword.length > 0;
 
-  // 아이디 중복 확인 핸들러 (Spring API 호출용)
-  const handleCheckId = async () => {
-    if (!userId.trim()) {
-      alert("아이디를 입력해주세요.");
-      return;
-    }
-    // TODO: Spring DB 검색 로직 연동
-    // const response = await fetch(`/api/check-id?id=${userId}`);
-    console.log(`${userId} 중복 확인 시도`);
-    alert("사용 가능한 아이디입니다."); // 임시 처리
-    setIsIdChecked(true);
-  }
+  // // 아이디 중복 확인 핸들러 (Spring API 호출용)
+  // const handleCheckId = async () => {
+  //   if (!userId.trim()) {
+  //     alert("아이디를 입력해주세요.");
+  //     return;
+  //   }
+  //   // TODO: Spring DB 검색 로직 연동
+  //   // const response = await fetch(`/api/check-id?id=${userId}`);
+  //   console.log(`${userId} 중복 확인 시도`);
+  //   alert("사용 가능한 아이디입니다."); // 임시 처리
+  //   setIsIdChecked(true);
+  // }
 
   const handleRegister = async () => {
     if (!isIdChecked) {
@@ -66,21 +66,21 @@ export default function RegisterPage() {
       password,
       email,
       gender,
-      birthDate: birthDate ? new Date(birthDate) : undefined 
+      birthDate: birthDate ? new Date(birthDate).toISOString().slice(0, 10) : undefined 
     };
 
     console.log("userdata : ", finalUserData);
 
     const reponse = await fetch('/api/register', {
       method: 'POST',
-      body: JSON.stringify({finalUserData}),
+      body: JSON.stringify(finalUserData),
       headers: { 'Content-Type': 'application/json'},
     });
 
     const {isAccede} = await reponse.json();
 
     // 회원가입 성공 로직
-    console.log({ userId, password, email, gender, birthDate });
+    //console.log({ userId, password, email, gender, birthDate });
     alert("회원가입이 완료되었습니다!");
     //router.push('/workspace');
   }
@@ -101,19 +101,10 @@ export default function RegisterPage() {
       alert(message);
     } else {
       setMessage('사용 가능한 아이디입니다.');
+      setIsIdChecked(true);
       alert(message);
     }
   };
-
-  const handleJoinMember= async () => {
-    const reponse = await fetch('/api/register', {
-      method: 'POST',
-      body: JSON.stringify({}),
-      headers: { 'Content-Type': 'application/json'},
-    });
-
-    const {isAccede} = await reponse.json();
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-700 p-4">

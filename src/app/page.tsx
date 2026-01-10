@@ -7,10 +7,26 @@ export default function Home() {
   const [username, setUsername] = useState('')
   const router = useRouter()
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (username.trim()) {
-      localStorage.setItem('username', username.trim())
-      router.push('/workspace')
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      const { isMember } = await response.json();
+      console.log(isMember);
+
+      if (isMember) {
+        alert("로그인 성공");
+        localStorage.setItem('username', username.trim())
+        router.push('/workspace')
+      } else {
+        alert("아이디가 존재하지 않습니다.");
+        return;
+      }
+      
     }
   }
 

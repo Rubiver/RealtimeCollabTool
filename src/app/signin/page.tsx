@@ -82,7 +82,7 @@ export default function RegisterPage() {
     // 회원가입 성공 로직
     //console.log({ userId, password, email, gender, birthDate });
     alert("회원가입이 완료되었습니다!");
-    //router.push('/workspace');
+    router.push('/');
   }
 
   //회원 ID 중복 검사 로직

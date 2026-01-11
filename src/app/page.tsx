@@ -5,23 +5,36 @@ import { useRouter } from 'next/navigation'
 
 export default function Home() {
   const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('');
   const router = useRouter()
 
+  interface UserData{
+    username?: String;
+    password?: String;
+  }
+
   const handleJoin = async () => {
+
+    const userData: UserData= {
+      username,
+      password,      
+    };
+
+    console.log("login : ",userData);
+
     if (username.trim()) {
       const response = await fetch('/api/login', {
         method: 'POST',
-        body: JSON.stringify({ username }),
+        body: JSON.stringify({userData}),
         headers: { 'Content-Type': 'application/json' },
       });
       
       const { isMember } = await response.json();
-      console.log(isMember);
 
       if (isMember) {
         alert("로그인 성공");
         localStorage.setItem('username', username.trim())
-        router.push('/workspace')
+        router.push('/workspace')        
       } else {
         alert("아이디가 존재하지 않습니다.");
         return;
@@ -57,7 +70,22 @@ export default function Home() {
               placeholder="이름을 입력하세요"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-gray-900 placeholder:text-gray-400"
             />
-          </div>          
+          </div>
+          <div>
+            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+              비밀번호
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
+              placeholder="비밀번호를 입력하세요"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-gray-900 placeholder:text-gray-400"
+            />
+          </div>
+                    
           <button
             onClick={handleJoin}
             disabled={!username.trim()}

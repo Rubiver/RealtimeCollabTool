@@ -16,6 +16,7 @@ export default function RegisterPage() {
   const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [confirmEmail, setConfirmEmail] = useState('')
   const [email, setEmail] = useState('')
   const [gender, setGender] = useState('')
   const [birthDate, setBirthDate] = useState('')
@@ -33,6 +34,9 @@ export default function RegisterPage() {
   const passwordRegex = /^(?=(.*[a-zA-Z]){5,})(?=(.*[0-9]){2,})(?=(.*[!@#$%^&*()_+]){1,}).*$/;
   const isPasswordValid = passwordRegex.test(password);
   const isMatch = password === confirmPassword && confirmPassword.length > 0;
+
+  // 이메일 확인 변수
+  const isEmailConfirmed = confirmEmail !== '' ? confirmEmail  : '';
 
   // // 아이디 중복 확인 핸들러 (Spring API 호출용)
   // const handleCheckId = async () => {
@@ -106,6 +110,10 @@ export default function RegisterPage() {
     }
   };
 
+  const checkEmail = async () => {
+
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-700 p-4">
       <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
@@ -169,13 +177,26 @@ export default function RegisterPage() {
           {/* 이메일 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900"
-              placeholder="example@email.com"
-            />
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900"
+                placeholder="example@email.com"
+              />
+              <button 
+                  onClick={checkDuplicate}
+                  className="px-3 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors whitespace-nowrap"
+                >
+                  이메일 확인
+              </button>
+            </div>
+            {confirmEmail.length > 0 && (
+              <p className={`mt-1 text-xs ${isMatch ? "text-green-600" : "text-red-500"}`}>
+                {isMatch ? "✓ 이메일 인증 완료" : "✕ 이메일 인증 필요"}
+              </p>
+            )}   
           </div>
 
           {/* 성별 및 생년월일 (2열 배치) */}

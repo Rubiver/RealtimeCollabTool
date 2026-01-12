@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model accounts {
+  id                  String  @id
+  user_id             String
+  type                String
+  provider            String
+  provider_account_id String
+  refresh_token       String? @db.Text
+  access_token        String? @db.Text
+  expires_at          Int?
+  token_type          String?
+  scope               String?
+  id_token            String? @db.Text
+  session_state       String?
+  users               users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "accounts_ibfk_1")
+
+  @@unique([provider, provider_account_id], map: "provider")
+  @@index([user_id], map: "user_id")
+}
+
+model sessions {
+  id            String   @id
+  session_token String   @unique(map: "session_token")
+  user_id       String
+  expires       DateTime
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "sessions_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model users {
+  id             String        @id
+  uid            Int           @unique(map: "uid") @default(autoincrement())
+  user_id        String        @db.VarChar(50)
+  password       String        @db.VarChar(64)
+  email          String        @unique(map: "email") @db.VarChar(100)
+  email_verified DateTime?
+  image          String?
+  gender         users_gender? @default(O)
+  birth          DateTime?     @db.Date
+  created_at     DateTime?     @default(now()) @db.Timestamp(0)
+  updated_at     DateTime?     @default(now()) @db.Timestamp(0)
+  accounts       accounts[]
+  sessions       sessions[]
+}
+
+model verification_tokens {
+  identifier String
+  token      String   @unique(map: "token")
+  expires    DateTime
+
+  @@unique([identifier, token], map: "identifier")
+}
+
+enum users_gender {
+  M
+  F
+  O
+}

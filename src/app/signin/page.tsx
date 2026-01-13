@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
+import { signIn } from 'next-auth/react'
 
 export default function RegisterPage() {
   interface User{
@@ -21,6 +23,15 @@ export default function RegisterPage() {
   const [gender, setGender] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [message, setMessage] = useState('');
+  const { data: session, status } = useSession();
+
+  useEffect(() => {
+    // 세션이 존재하고 이메일이 입력한 이메일과 같다면 인증 성공 처리
+    if (session?.user?.email === email) {
+      setConfirmEmail(email);
+      // console.log("이메일 인증 완료:", session.user.email);
+    }
+  }, [session, email]);
   
   // 아이디 중복 확인 상태 (Spring 연동 시 사용)
   const [isIdChecked, setIsIdChecked] = useState(false)
@@ -111,8 +122,31 @@ export default function RegisterPage() {
   };
 
   const checkEmail = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      alert("유효한 이메일 주소를 입력해주세요.");
+      return;
+    }
 
-  }
+    try {
+      // 1. NextAuth의 Email Provider 호출
+      // redirect: false를 해야 페이지가 새로고침되지 않고 현재 페이지에 머뭅니다.
+      const result = await signIn("email", { 
+        email, 
+        redirect: false,
+        callbackUrl: window.location.href // 인증 완료 후 돌아올 주소 (현재 페이지)
+      });
+
+      if (result?.error) {
+        console.error("Email error:", result.error);
+        alert("이메일 발송 중 오류가 발생했습니다.");
+      } else {
+        alert("입력하신 이메일로 인증 링크를 보냈습니다.\n메일함을 확인하고 링크를 클릭해주세요!");
+      }
+    } catch (error) {
+      console.error("CheckEmail Error:", error);
+      alert("이메일 전송에 실패했습니다.");
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-700 p-4">
@@ -186,7 +220,7 @@ export default function RegisterPage() {
                 placeholder="example@email.com"
               />
               <button 
-                  onClick={checkDuplicate}
+                  onClick={checkEmail}
                   className="px-3 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors whitespace-nowrap"
                 >
                   이메일 확인
@@ -228,7 +262,7 @@ export default function RegisterPage() {
           {/* 회원가입 버튼 */}
           <button
             onClick={handleRegister}
-            disabled={!isIdChecked || !isPasswordValid || !isMatch}
+            disabled={!isIdChecked || !isPasswordValid || !isMatch || !isEmailConfirmed}
             className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg font-bold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all mt-4"
           >
             회원가입 하기

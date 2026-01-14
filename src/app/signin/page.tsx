@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
-import { signIn } from 'next-auth/react'
 
 export default function RegisterPage() {
   interface User{
@@ -23,16 +21,11 @@ export default function RegisterPage() {
   const [gender, setGender] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [message, setMessage] = useState('');
-  const { data: session, status } = useSession();
+  const [verificationCode, setVerificationCode] = useState(''); // 사용자가 입력한 인증번호
+const [isEmailSent, setIsEmailSent] = useState(false);        // 메일 발송 여부
+const [isEmailVerified, setIsEmailVerified] = useState(false); // 인증 완료 여부
+const [timer, setTimer] = useState(300);                      // 5분 타이머
 
-  useEffect(() => {
-    // 세션이 존재하고 이메일이 입력한 이메일과 같다면 인증 성공 처리
-    if (session?.user?.email === email) {
-      setConfirmEmail(email);
-      // console.log("이메일 인증 완료:", session.user.email);
-    }
-  }, [session, email]);
-  
   // 아이디 중복 확인 상태 (Spring 연동 시 사용)
   const [isIdChecked, setIsIdChecked] = useState(false)
 
@@ -121,31 +114,57 @@ export default function RegisterPage() {
     }
   };
 
-  const checkEmail = async () => {
-    if (!email.trim() || !email.includes('@')) {
-      alert("유효한 이메일 주소를 입력해주세요.");
+  // 1. 이메일 발송 API 호출
+  const sendVerificationEmail = async () => {
+    if (!email.includes('@')) {
+      alert("유효한 이메일을 입력해주세요.");
       return;
     }
 
-    try {
-      // 1. NextAuth의 Email Provider 호출
-      // redirect: false를 해야 페이지가 새로고침되지 않고 현재 페이지에 머뭅니다.
-      const result = await signIn("email", { 
-        email, 
-        redirect: false,
-        callbackUrl: window.location.href // 인증 완료 후 돌아올 주소 (현재 페이지)
-      });
+    const response = await fetch('/api/auth/send', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-      if (result?.error) {
-        console.error("Email error:", result.error);
-        alert("이메일 발송 중 오류가 발생했습니다.");
-      } else {
-        alert("입력하신 이메일로 인증 링크를 보냈습니다.\n메일함을 확인하고 링크를 클릭해주세요!");
-      }
-    } catch (error) {
-      console.error("CheckEmail Error:", error);
-      alert("이메일 전송에 실패했습니다.");
+    if (response.ok) {
+      setIsEmailSent(true);
+      setTimer(300); // 타이머 초기화
+      alert("인증번호가 발송되었습니다.");
+    } else {
+      alert("발송에 실패했습니다. 다시 시도해주세요.");
     }
+  };
+
+  // 2. 인증번호 검증 API 호출
+  const verifyCode = async () => {
+    const response = await fetch('/api/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, inputCode: verificationCode }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.ok) {
+      setIsEmailVerified(true);
+      alert("이메일 인증이 완료되었습니다.");
+    } else {
+      alert("인증번호가 틀렸거나 만료되었습니다.");
+    }
+  };
+
+  // 3. 타이머 로직 (useEffect)
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isEmailSent && timer > 0 && !isEmailVerified) {
+      interval = setInterval(() => setTimer((prev) => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isEmailSent, timer, isEmailVerified]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   return (
@@ -208,7 +227,7 @@ export default function RegisterPage() {
             )}
           </div>
 
-          {/* 이메일 */}
+          {/* 이메일 섹션 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
             <div className="flex gap-2">
@@ -216,22 +235,49 @@ export default function RegisterPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900"
+                disabled={isEmailVerified}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg outline-none text-gray-900 disabled:bg-gray-100"
                 placeholder="example@email.com"
               />
               <button 
-                  onClick={checkEmail}
-                  className="px-3 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors whitespace-nowrap"
-                >
-                  이메일 확인
+                onClick={sendVerificationEmail}
+                disabled={isEmailVerified}
+                className="px-3 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 disabled:bg-gray-400"
+              >
+                {isEmailSent ? "재발송" : "인증 요청"}
               </button>
             </div>
-            {confirmEmail.length > 0 && (
-              <p className={`mt-1 text-xs ${isMatch ? "text-green-600" : "text-red-500"}`}>
-                {isMatch ? "✓ 이메일 인증 완료" : "✕ 이메일 인증 필요"}
-              </p>
-            )}   
           </div>
+
+          {/* 인증번호 입력란 (메일 발송 시에만 표시) */}
+          {isEmailSent && !isEmailVerified && (
+            <div className="mt-2">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none text-gray-900"
+                    placeholder="인증번호 6자리"
+                  />
+                  <span className="absolute right-3 top-2 text-sm text-red-500 font-medium">
+                    {formatTime(timer)}
+                  </span>
+                </div>
+                <button 
+                  onClick={verifyCode}
+                  className="px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500"
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isEmailVerified && (
+            <p className="mt-1 text-xs text-green-600">✓ 이메일 인증이 완료되었습니다.</p>
+          )}
 
           {/* 성별 및 생년월일 (2열 배치) */}
           <div className="grid grid-cols-2 gap-4">
@@ -262,7 +308,7 @@ export default function RegisterPage() {
           {/* 회원가입 버튼 */}
           <button
             onClick={handleRegister}
-            disabled={!isIdChecked || !isPasswordValid || !isMatch || !isEmailConfirmed}
+            disabled={!isIdChecked || !isPasswordValid || !isMatch || !isEmailVerified}
             className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg font-bold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all mt-4"
           >
             회원가입 하기

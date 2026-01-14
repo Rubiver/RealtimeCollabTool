@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import Providers from '@/components/Providers'
 
 export const metadata: Metadata = {
   title: 'Collaboration Tool',
@@ -15,9 +14,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className="antialiased">
-          <Providers>
-             {children}
-          </Providers>
+          {children}
         </body>
     </html>
   )

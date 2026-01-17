@@ -9,10 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.9",
     "@next-auth/prisma-adapter": "^1.0.7",
     "@paralleldrive/cuid2": "^3.0.6",
+    "@tailwindcss/vite": "^4.1.18",
     "@upstash/redis": "^1.36.1",
+    "clsx": "^2.1.1",
     "fabric": "^5.3.0",
+    "motion": "^12.26.2",
     "mysql2": "^3.16.0",
     "next": "^14.2.0",
     "next-auth": "^4.24.13",
@@ -35,7 +39,7 @@
     "eslint": "^8.56.0",
     "eslint-config-next": "^14.2.0",
     "postcss": "^8.4.33",
-    "tailwindcss": "^3.4.1",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.3.3"
   }
 }

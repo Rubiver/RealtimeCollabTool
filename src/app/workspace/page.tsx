@@ -41,6 +41,14 @@ export default function WorkspacePage() {
           >
             로그아웃
           </button>
+          <button
+            onClick={() => {
+              router.push('/myworkspace')
+            }}
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+          >
+            내 워크 스페이스로
+          </button>
         </div>
       </header>
 

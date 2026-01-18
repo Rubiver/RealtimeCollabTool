@@ -7,14 +7,14 @@ interface Workspace {
   id: string
   name: string
   invite_code: string
-  owner_id : string
-  create_at : Date
+  owner_id: string
+  create_at: Date
 }
 
 export default function WorkspacePage() {  
-  const [activeTab, setActiveTab] = useState<'draw' | 'doc'>('draw')
   const [username, setUsername] = useState('')
-  const [workspace, setWorkspace] = useState<Workspace[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
@@ -22,50 +22,173 @@ export default function WorkspacePage() {
     if (!storedUsername) {
       router.push('/')
     } else {
-      setUsername(storedUsername);
-
-      const loadData = async () => {
-          const response = await fetch('/api/workspace/get', {
-          method: 'POST',
-          body: JSON.stringify(storedUsername),
-          headers: { 'Content-Type': 'application/json' },
-        });
-        
-        const workspace_data = await response.json();
-
-        setWorkspace(workspace_data);
-      };
-      loadData();
+      setUsername(storedUsername)
+      loadWorkspaces(storedUsername)
     }
   }, [router])
+
+  const loadWorkspaces = async (username: string) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch('/api/workspace/get', {
+        method: 'POST',
+        body: JSON.stringify({ storedUsername: username }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+      
+      const data = await response.json()
+      
+      if (data.rows) {
+        setWorkspaces(data.rows)
+      }
+    } catch (error) {
+      console.error('워크스페이스 로드 실패:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleCreateWorkspace = () => {
+    router.push('/createworkspace')
+  }
+
+  const handleWorkspaceClick = (workspaceId: string) => {
+    // 워크스페이스로 이동하는 로직 (추후 구현)
+    console.log('워크스페이스 선택:', workspaceId)
+    router.push(`/workspace?id=${workspaceId}`)
+  }
 
   if (!username) {
     return null
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
-        {workspace.length === 0 ? (
-          <div className="text-center text-gray-500 text-sm py-8">
-            생성된 워크 스페이스가 없습니다.
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Header */}
+      <header className="bg-white shadow-md px-6 py-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">내 워크스페이스</h1>
+        <div className="flex items-center gap-4">
+          <span className="text-gray-600">안녕하세요, {username}님</span>
+          <button
+            onClick={() => router.push('/workspace')}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            기본 워크스페이스
+          </button>
+          <button
+            onClick={() => {
+              localStorage.removeItem('username')
+              router.push('/')
+            }}
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+          >
+            로그아웃
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-6xl mx-auto p-8">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          {/* 헤더 섹션 */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">워크스페이스 목록</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                참여 중인 워크스페이스를 확인하고 관리하세요
+              </p>
+            </div>
+            <button
+              onClick={handleCreateWorkspace}
+              className="px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold flex items-center gap-2"
+            >
+              워크스페이스 입장
+            </button>
+            <button
+              onClick={handleCreateWorkspace}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+              </svg>
+              워크스페이스 생성
+            </button>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {workspace?.map((space) => (
-              <div
-                key={space.id}
-                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+
+          {/* 워크스페이스 리스트 */}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            </div>
+          ) : workspaces.length === 0 ? (
+            <div className="text-center py-16">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+              </svg>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                생성된 워크스페이스가 없습니다
+              </h3>
+              <p className="text-gray-500 mb-6">
+                새로운 워크스페이스를 생성하여 협업을 시작하세요
+              </p>
+              <button
+                onClick={handleCreateWorkspace}
+                className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold"
               >
-                <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                  {space.name.charAt(0).toUpperCase()}
+                첫 워크스페이스 만들기
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {workspaces.map((workspace) => (
+                <div
+                  key={workspace.id}
+                  onClick={() => handleWorkspaceClick(workspace.id)}
+                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer bg-gradient-to-br from-white to-gray-50"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md">
+                        {workspace.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-800">
+                          {workspace.name}
+                        </h3>
+                        <p className="text-xs text-gray-500">
+                          소유자: {workspace.owner_id}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2 mt-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                      </svg>
+                      <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                        {workspace.invite_code || '초대 코드 없음'}
+                      </span>
+                    </div>
+                    
+                    {workspace.create_at && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-xs">
+                          {new Date(workspace.create_at).toLocaleDateString('ko-KR')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <span className="text-gray-800 font-medium">
-                  {space.owner_id}
-                </span>
-              </div>
-            ))} 
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
   )
 }

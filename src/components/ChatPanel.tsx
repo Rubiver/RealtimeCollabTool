@@ -12,9 +12,10 @@ interface Message {
 
 interface ChatPanelProps {
   username: string
+  workspaceId: string
 }
 
-export default function ChatPanel({ username }: ChatPanelProps) {
+export default function ChatPanel({ username, workspaceId }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState('')
   const [socket, setSocket] = useState<Socket | null>(null)
@@ -35,7 +36,7 @@ export default function ChatPanel({ username }: ChatPanelProps) {
       console.log('ChatPanel: Connected to server')
       setIsConnected(true)
       setConnectionError(null)
-      newSocket.emit('join', { username })
+      newSocket.emit('join', { username, workspaceId })
     })
 
     newSocket.on('disconnect', (reason) => {
@@ -96,7 +97,7 @@ export default function ChatPanel({ username }: ChatPanelProps) {
     return () => {
       newSocket.close()
     }
-  }, [username])
+  }, [username, workspaceId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -104,11 +105,12 @@ export default function ChatPanel({ username }: ChatPanelProps) {
 
   const sendMessage = () => {
     if (!inputMessage.trim()) return
-    
+
     if (socket && isConnected) {
       socket.emit('message', {
         username,
         message: inputMessage.trim(),
+        workspaceId,
       })
       setInputMessage('')
     } else {
@@ -142,9 +144,8 @@ export default function ChatPanel({ username }: ChatPanelProps) {
         </div>
         <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
           <div
-            className={`w-2 h-2 rounded-full ${
-              isConnected ? 'bg-green-300' : 'bg-red-300'
-            }`}
+            className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-300' : 'bg-red-300'
+              }`}
             title={isConnected ? '연결됨' : '연결 안됨'}
           />
           <span className="text-xs font-semibold">
@@ -152,7 +153,7 @@ export default function ChatPanel({ username }: ChatPanelProps) {
           </span>
         </div>
       </div>
-      
+
       {connectionError && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mx-3 mt-3 rounded">
           <div className="flex items-start">
@@ -163,7 +164,7 @@ export default function ChatPanel({ username }: ChatPanelProps) {
           </div>
         </div>
       )}
-      
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-indigo-50/30 to-white">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-8">
@@ -173,42 +174,38 @@ export default function ChatPanel({ username }: ChatPanelProps) {
               </svg>
             </div>
             <p className="text-sm text-gray-500">
-              {isConnected 
+              {isConnected
                 ? '메시지가 없습니다. 채팅을 시작해보세요!'
                 : '서버 연결을 기다리는 중...'}
             </p>
           </div>
         ) : (
           messages.map((msg) => (
-            <div 
-              key={msg.id} 
-              className={`${
-                msg.username === 'System' 
-                  ? 'text-center' 
-                  : msg.username === username
+            <div
+              key={msg.id}
+              className={`${msg.username === 'System'
+                ? 'text-center'
+                : msg.username === username
                   ? 'ml-auto max-w-[80%]'
                   : 'mr-auto max-w-[80%]'
-              }`}
+                }`}
             >
               {msg.username === 'System' ? (
                 <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs italic">
                   {msg.message}
                 </div>
               ) : (
-                <div className={`${
-                  msg.username === username
-                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-2xl rounded-tr-sm'
-                    : 'bg-white border border-indigo-100 text-gray-800 rounded-2xl rounded-tl-sm'
-                } p-3 shadow-sm`}>
+                <div className={`${msg.username === username
+                  ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-2xl rounded-tr-sm'
+                  : 'bg-white border border-indigo-100 text-gray-800 rounded-2xl rounded-tl-sm'
+                  } p-3 shadow-sm`}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`font-semibold text-xs ${
-                      msg.username === username ? 'text-indigo-100' : 'text-indigo-700'
-                    }`}>
+                    <span className={`font-semibold text-xs ${msg.username === username ? 'text-indigo-100' : 'text-indigo-700'
+                      }`}>
                       {msg.username}
                     </span>
-                    <span className={`text-xs ${
-                      msg.username === username ? 'text-indigo-200' : 'text-gray-400'
-                    }`}>
+                    <span className={`text-xs ${msg.username === username ? 'text-indigo-200' : 'text-gray-400'
+                      }`}>
                       {new Date(msg.timestamp).toLocaleTimeString('ko-KR', {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -223,7 +220,7 @@ export default function ChatPanel({ username }: ChatPanelProps) {
         )}
         <div ref={messagesEndRef} />
       </div>
-      
+
       <div className="border-t-2 border-indigo-100 p-4 bg-white">
         <div className="flex gap-2">
           <input
@@ -235,19 +232,18 @@ export default function ChatPanel({ username }: ChatPanelProps) {
               isConnected
                 ? '메시지를 입력하세요...'
                 : connectionError
-                ? '서버 연결 실패 (로컬 전용)'
-                : '서버 연결 중...'
+                  ? '서버 연결 실패 (로컬 전용)'
+                  : '서버 연결 중...'
             }
             className="flex-1 px-4 py-3 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-gray-900 placeholder:text-gray-400 bg-indigo-50/50"
           />
           <button
             onClick={sendMessage}
             disabled={!inputMessage.trim()}
-            className={`px-6 py-3 rounded-lg transition-all font-semibold shadow-md hover:shadow-lg ${
-              isConnected
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
-                : 'bg-gray-400 text-white hover:bg-gray-500'
-            } disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none`}
+            className={`px-6 py-3 rounded-lg transition-all font-semibold shadow-md hover:shadow-lg ${isConnected
+              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
+              : 'bg-gray-400 text-white hover:bg-gray-500'
+              } disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none`}
           >
             전송
           </button>

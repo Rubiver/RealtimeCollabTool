@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { io, Socket } from 'socket.io-client'
 
-export default function DrawingBoard() {
+interface DrawingBoardProps {
+  workspaceId: string
+}
+
+export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fabricCanvasRef = useRef<any>(null)
   const socketRef = useRef<Socket | null>(null)
@@ -37,12 +41,12 @@ export default function DrawingBoard() {
         })
 
         socket.on('connect', () => {
-          socket?.emit('joinDrawing', { username })
+          socket?.emit('joinDrawing', { username, workspaceId })
         })
 
         socket.on('drawingUpdate', (data: { type: string; data: any }) => {
           if (!canvas) return
-          
+
           if (data.type === 'path') {
             try {
               const path = new fabric.Path(data.data.path, {
@@ -66,12 +70,15 @@ export default function DrawingBoard() {
           const path = e.path
           if (socket && path) {
             socket.emit('drawing', {
-              type: 'path',
               data: {
-                path: path.path,
-                stroke: path.stroke,
-                strokeWidth: path.strokeWidth,
+                type: 'path',
+                data: {
+                  path: path.path,
+                  stroke: path.stroke,
+                  strokeWidth: path.strokeWidth,
+                },
               },
+              workspaceId,
             })
           }
         })
@@ -93,14 +100,17 @@ export default function DrawingBoard() {
       fabricCanvasRef.current = null
       setIsFabricLoaded(false)
     }
-  }, [])
+  }, [workspaceId])
 
   const handleClear = () => {
     if (fabricCanvasRef.current && socketRef.current) {
       fabricCanvasRef.current.clear()
       fabricCanvasRef.current.backgroundColor = '#ffffff'
       fabricCanvasRef.current.renderAll()
-      socketRef.current.emit('drawing', { type: 'clear' })
+      socketRef.current.emit('drawing', {
+        data: { type: 'clear' },
+        workspaceId
+      })
     }
   }
 
@@ -141,11 +151,10 @@ export default function DrawingBoard() {
         <div className="flex flex-wrap items-center gap-4">
           <button
             onClick={() => setIsDrawing(!isDrawing)}
-            className={`px-5 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${
-              isDrawing
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white'
-                : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-300'
-            }`}
+            className={`px-5 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${isDrawing
+              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white'
+              : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-300'
+              }`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -162,9 +171,8 @@ export default function DrawingBoard() {
                 <button
                   key={c.color}
                   onClick={() => setColor(c.color)}
-                  className={`w-8 h-8 rounded-lg transition-all shadow-md hover:shadow-lg hover:scale-110 ${
-                    color === c.color ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
-                  }`}
+                  className={`w-8 h-8 rounded-lg transition-all shadow-md hover:shadow-lg hover:scale-110 ${color === c.color ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
+                    }`}
                   style={{ backgroundColor: c.color }}
                   title={c.name}
                 />
@@ -213,8 +221,8 @@ export default function DrawingBoard() {
       {/* Canvas */}
       <div className="flex-1 overflow-auto flex items-center justify-center p-6 bg-gradient-to-br from-indigo-50 to-purple-50">
         <div className="relative">
-          <canvas 
-            ref={canvasRef} 
+          <canvas
+            ref={canvasRef}
             className="border-4 border-white rounded-lg shadow-2xl"
           />
           {!isFabricLoaded && (

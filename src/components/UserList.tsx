@@ -8,7 +8,11 @@ interface User {
   username: string
 }
 
-export default function UserList() {
+interface UserListProps {
+  workspaceId: string
+}
+
+export default function UserList({ workspaceId }: UserListProps) {
   const [users, setUsers] = useState<User[]>([])
   const [socket, setSocket] = useState<Socket | null>(null)
 
@@ -26,7 +30,7 @@ export default function UserList() {
 
     newSocket.on('connect', () => {
       console.log('UserList: Connected to server')
-      newSocket.emit('getUsers')
+      newSocket.emit('getUsers', { workspaceId })
     })
 
     newSocket.on('connect_error', (error) => {
@@ -42,11 +46,11 @@ export default function UserList() {
     })
 
     newSocket.on('userJoined', () => {
-      newSocket.emit('getUsers')
+      newSocket.emit('getUsers', { workspaceId })
     })
 
     newSocket.on('userLeft', () => {
-      newSocket.emit('getUsers')
+      newSocket.emit('getUsers', { workspaceId })
     })
 
     setSocket(newSocket)
@@ -54,7 +58,7 @@ export default function UserList() {
     return () => {
       newSocket.close()
     }
-  }, [])
+  }, [workspaceId])
 
   return (
     <div className="h-full flex flex-col">

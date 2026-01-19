@@ -7,7 +7,11 @@ import dynamic from 'next/dynamic'
 const ReactQuill = dynamic(() => import('react-quill'), { ssr: false })
 import 'react-quill/dist/quill.snow.css'
 
-export default function DocumentEditor() {
+interface DocumentEditorProps {
+  workspaceId: string
+}
+
+export default function DocumentEditor({ workspaceId }: DocumentEditorProps) {
   const [content, setContent] = useState('')
   const [socket, setSocket] = useState<Socket | null>(null)
   const quillRef = useRef<any>(null)
@@ -21,7 +25,7 @@ export default function DocumentEditor() {
     })
 
     socket.on('connect', () => {
-      socket.emit('joinDocument', { username })
+      socket.emit('joinDocument', { username, workspaceId })
     })
 
     socket.on('documentUpdate', (data: { content: string }) => {
@@ -33,12 +37,15 @@ export default function DocumentEditor() {
     return () => {
       socket.close()
     }
-  }, [])
+  }, [workspaceId])
 
   const handleChange = (value: string) => {
     setContent(value)
     if (socket) {
-      socket.emit('documentChange', { content: value })
+      socket.emit('documentChange', {
+        data: { content: value },
+        workspaceId
+      })
     }
   }
 

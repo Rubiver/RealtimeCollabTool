@@ -20,8 +20,6 @@ export default function Home() {
       password,      
     };
 
-    console.log("login : ",userData);
-
     if (username.trim()) {
       const response = await fetch('/api/login', {
         method: 'POST',
@@ -34,7 +32,7 @@ export default function Home() {
       if (isMember) {
         alert("로그인 성공");
         localStorage.setItem('username', username.trim())
-        router.push('/workspace')        
+        router.push('/myworkspace')        
       } else {
         alert("아이디가 존재하지 않습니다.");
         return;

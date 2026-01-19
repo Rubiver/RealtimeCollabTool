@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import ChatPanel from '@/components/ChatPanel'
 import DrawingBoard from '@/components/DrawingBoard'
 import DocumentEditor from '@/components/DocumentEditor'
@@ -10,7 +10,9 @@ import UserList from '@/components/UserList'
 export default function WorkspacePage() {
   const [activeTab, setActiveTab] = useState<'draw' | 'doc'>('draw')
   const [username, setUsername] = useState('')
+  const [workspaceId, setWorkspaceId] = useState('default')
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     const storedUsername = localStorage.getItem('username')
@@ -19,7 +21,13 @@ export default function WorkspacePage() {
     } else {
       setUsername(storedUsername)
     }
-  }, [router])
+
+    // Get workspaceId from URL query parameter
+    const id = searchParams.get('id')
+    if (id) {
+      setWorkspaceId(id)
+    }
+  }, [router, searchParams])
 
   if (!username) {
     return null
@@ -66,7 +74,7 @@ export default function WorkspacePage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Users */}
         <aside className="w-64 bg-white border-r-2 border-indigo-100 flex flex-col shadow-lg">
-          <UserList />
+          <UserList workspaceId={workspaceId} />
         </aside>
 
         {/* Main Content */}
@@ -76,11 +84,10 @@ export default function WorkspacePage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setActiveTab('draw')}
-                className={`px-6 py-3 font-semibold transition-all relative ${
-                  activeTab === 'draw'
+                className={`px-6 py-3 font-semibold transition-all relative ${activeTab === 'draw'
                     ? 'text-indigo-700'
                     : 'text-gray-600 hover:text-indigo-600'
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -94,11 +101,10 @@ export default function WorkspacePage() {
               </button>
               <button
                 onClick={() => setActiveTab('doc')}
-                className={`px-6 py-3 font-semibold transition-all relative ${
-                  activeTab === 'doc'
+                className={`px-6 py-3 font-semibold transition-all relative ${activeTab === 'doc'
                     ? 'text-indigo-700'
                     : 'text-gray-600 hover:text-indigo-600'
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -115,13 +121,13 @@ export default function WorkspacePage() {
 
           {/* Content Area */}
           <div className="flex-1 overflow-hidden bg-gradient-to-br from-gray-50 to-indigo-50">
-            {activeTab === 'draw' ? <DrawingBoard /> : <DocumentEditor />}
+            {activeTab === 'draw' ? <DrawingBoard workspaceId={workspaceId} /> : <DocumentEditor workspaceId={workspaceId} />}
           </div>
         </main>
 
         {/* Right Sidebar - Chat */}
         <aside className="w-80 bg-white border-l-2 border-indigo-100 shadow-lg">
-          <ChatPanel username={username} />
+          <ChatPanel username={username} workspaceId={workspaceId} />
         </aside>
       </div>
     </div>

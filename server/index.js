@@ -83,13 +83,26 @@ io.on('connection', (socket) => {
   })
 
   socket.on('joinDrawing', ({ username, workspaceId = 'default' }) => {
-    socket.join(`drawing-${workspaceId}`)
-    console.log(`${username} joined drawing room for workspace ${workspaceId}`)
+    const roomName = `drawing-${workspaceId}`
+    socket.join(roomName)
+    console.log(`${username} joined drawing room: ${roomName} (Socket: ${socket.id})`)
+    
+    // 현재 룸에 있는 소켓 확인
+    const room = io.sockets.adapter.rooms.get(roomName)
+    console.log(`👥 Users in ${roomName}:`, room ? Array.from(room) : [])
   })
 
   socket.on('drawing', ({ data, workspaceId = 'default' }) => {
-    // Broadcast drawing updates only to users in the same workspace
-    socket.to(`drawing-${workspaceId}`).emit('drawingUpdate', data)
+    const roomName = `drawing-${workspaceId}`
+    console.log(`📤 Broadcasting drawing to workspace: ${workspaceId}, type: ${data.type}, from socket: ${socket.id}`)
+    
+    // 현재 룸에 있는 소켓 확인
+    const room = io.sockets.adapter.rooms.get(roomName)
+    console.log(`👥 Current users in ${roomName}:`, room ? Array.from(room) : [])
+    console.log(`📨 Broadcasting to ${room ? room.size - 1 : 0} other users`)
+    
+    socket.to(roomName).emit('drawingUpdate', data)
+    console.log(`✅ Drawing broadcasted to ${roomName}`)
   })
 
   socket.on('joinDocument', ({ username, workspaceId = 'default' }) => {

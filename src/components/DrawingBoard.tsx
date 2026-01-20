@@ -1,20 +1,22 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { io, Socket } from 'socket.io-client'
 
 interface DrawingBoardProps {
   workspaceId: string
 }
 
+type Socket = any
+
 export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fabricCanvasRef = useRef<any>(null)
   const socketRef = useRef<Socket | null>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
+  const [isDrawing, setIsDrawing] = useState(true)
   const [color, setColor] = useState('#6366f1')
   const [brushSize, setBrushSize] = useState(5)
   const [isFabricLoaded, setIsFabricLoaded] = useState(false)
+  const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
 
   useEffect(() => {
     let canvas: any = null
@@ -24,11 +26,19 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
       if (typeof window !== 'undefined' && canvasRef.current) {
         const fabricModule = await import('fabric')
         const fabric = fabricModule.fabric
+        
         canvas = new fabric.Canvas(canvasRef.current, {
-          width: 800,
-          height: 600,
+          width: 1000,
+          height: 700,
           backgroundColor: '#ffffff',
+          isDrawingMode: true,
+          selection: false,
         })
+
+        // 브러시 설정
+        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas)
+        canvas.freeDrawingBrush.width = brushSize
+        canvas.freeDrawingBrush.color = color
 
         fabricCanvasRef.current = canvas
         setIsFabricLoaded(true)
@@ -36,47 +46,89 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
         const username = localStorage.getItem('username')
         if (!username) return
 
+        // Socket.IO 동적 로드
+        const { io } = await import('socket.io-client')
         socket = io('http://localhost:3001', {
           transports: ['websocket'],
+          reconnection: true,
         })
 
         socket.on('connect', () => {
+          console.log('DrawingBoard: Connected to server, Socket ID:', socket.id)
           socket?.emit('joinDrawing', { username, workspaceId })
+          console.log('DrawingBoard: Joined workspace:', workspaceId)
+          console.log('DrawingBoard: Event listeners registered:', socket.eventNames())
         })
 
+        socket.on('connect_error', (error: Error) => {
+          console.error('DrawingBoard: Connection error:', error)
+        })
+
+        // 다른 사용자의 그림 받기
         socket.on('drawingUpdate', (data: { type: string; data: any }) => {
-          if (!canvas) return
+          console.log('📥 [EVENT FIRED] drawingUpdate received!', {
+            type: data.type,
+            workspaceId,
+            hasData: !!data.data,
+            currentSocketId: socket.id,
+            timestamp: new Date().toISOString()
+          })
+          
+          if (!canvas) {
+            console.error('❌ Canvas not available!')
+            return
+          }
+          
+          console.log('✅ Canvas is available, processing drawing...')
 
           if (data.type === 'path') {
             try {
+              // Path 객체 직접 생성
               const path = new fabric.Path(data.data.path, {
                 stroke: data.data.stroke,
                 strokeWidth: data.data.strokeWidth,
-                fill: '',
+                fill: data.data.fill || '',
+                selectable: false,
               })
               canvas.add(path)
               canvas.renderAll()
+              console.log('✅ Path added to canvas, total objects:', canvas.getObjects().length)
             } catch (error) {
-              console.error('Error adding path:', error)
+              console.error('❌ Error adding path:', error)
             }
           } else if (data.type === 'clear') {
             canvas.clear()
             canvas.backgroundColor = '#ffffff'
             canvas.renderAll()
+            console.log('✅ Canvas cleared')
           }
         })
+        
+        console.log('✅ drawingUpdate event listener registered')
 
+        // 로컬에서 그림을 그릴 때 서버로 전송
         canvas.on('path:created', (e: any) => {
           const path = e.path
           if (socket && path) {
+            console.log('🎨 Path created locally, total objects:', canvas.getObjects().length)
+            
+            const pathData = {
+              path: path.path,
+              stroke: path.stroke,
+              strokeWidth: path.strokeWidth,
+              fill: path.fill || '',
+            }
+            
+            console.log('📤 Sending drawing to server:', {
+              workspaceId,
+              pathData,
+              socketId: socket.id
+            })
+            
             socket.emit('drawing', {
               data: {
                 type: 'path',
-                data: {
-                  path: path.path,
-                  stroke: path.stroke,
-                  strokeWidth: path.strokeWidth,
-                },
+                data: pathData,
               },
               workspaceId,
             })
@@ -102,11 +154,47 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
     }
   }, [workspaceId])
 
+  // 브러시 설정 업데이트
+  useEffect(() => {
+    if (fabricCanvasRef.current && isFabricLoaded) {
+      const canvas = fabricCanvasRef.current
+      if (!canvas.freeDrawingBrush) {
+        const fabricModule = require('fabric')
+        canvas.freeDrawingBrush = new fabricModule.fabric.PencilBrush(canvas)
+      }
+      
+      const brush = canvas.freeDrawingBrush
+      brush.width = brushSize
+      
+      if (tool === 'eraser') {
+        // 지우개: 흰색으로 그리기
+        brush.color = '#ffffff'
+      } else {
+        brush.color = color
+      }
+      
+      console.log('Brush updated:', { tool, color: brush.color, width: brush.width })
+    }
+  }, [brushSize, color, tool, isFabricLoaded])
+
+  // 그리기 모드 토글
+  useEffect(() => {
+    if (fabricCanvasRef.current && isFabricLoaded) {
+      fabricCanvasRef.current.isDrawingMode = isDrawing
+    }
+  }, [isDrawing, isFabricLoaded])
+
   const handleClear = () => {
     if (fabricCanvasRef.current && socketRef.current) {
       fabricCanvasRef.current.clear()
       fabricCanvasRef.current.backgroundColor = '#ffffff'
       fabricCanvasRef.current.renderAll()
+      
+      console.log('📤 Sending clear to server:', {
+        workspaceId,
+        socketId: socketRef.current.id
+      })
+      
       socketRef.current.emit('drawing', {
         data: { type: 'clear' },
         workspaceId
@@ -114,22 +202,15 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
     }
   }
 
-  const updateBrush = () => {
-    if (fabricCanvasRef.current && isFabricLoaded) {
-      const brush = fabricCanvasRef.current.freeDrawingBrush
-      if (brush) {
-        brush.width = brushSize
-        brush.color = color
+  const handleUndo = () => {
+    if (fabricCanvasRef.current) {
+      const objects = fabricCanvasRef.current.getObjects()
+      if (objects.length > 0) {
+        fabricCanvasRef.current.remove(objects[objects.length - 1])
+        fabricCanvasRef.current.renderAll()
       }
     }
   }
-
-  useEffect(() => {
-    if (fabricCanvasRef.current && isFabricLoaded) {
-      fabricCanvasRef.current.isDrawingMode = isDrawing
-      updateBrush()
-    }
-  }, [isDrawing, color, brushSize, isFabricLoaded])
 
   const predefinedColors = [
     { name: '인디고', color: '#6366f1' },
@@ -149,50 +230,83 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
       {/* Toolbar */}
       <div className="bg-white border-b-2 border-indigo-100 px-6 py-4">
         <div className="flex flex-wrap items-center gap-4">
-          <button
-            onClick={() => setIsDrawing(!isDrawing)}
-            className={`px-5 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${isDrawing
-              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white'
-              : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-300'
+          {/* 도구 선택 */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setTool('pen')
+                setIsDrawing(true)
+              }}
+              className={`px-5 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${
+                tool === 'pen'
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white'
+                  : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-300'
               }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-            {isDrawing ? '그리기 중' : '그리기 시작'}
-          </button>
-
-          <div className="h-8 w-px bg-indigo-200"></div>
-
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-semibold text-gray-700">색상:</label>
-            <div className="flex gap-2">
-              {predefinedColors.map((c) => (
-                <button
-                  key={c.color}
-                  onClick={() => setColor(c.color)}
-                  className={`w-8 h-8 rounded-lg transition-all shadow-md hover:shadow-lg hover:scale-110 ${color === c.color ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
-                    }`}
-                  style={{ backgroundColor: c.color }}
-                  title={c.name}
-                />
-              ))}
-              <div className="relative">
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="w-8 h-8 rounded-lg border-2 border-indigo-200 cursor-pointer hover:border-indigo-300 transition-colors"
-                  title="커스텀 색상"
-                />
-              </div>
-            </div>
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              펜
+            </button>
+            
+            <button
+              onClick={() => {
+                setTool('eraser')
+                setIsDrawing(true)
+              }}
+              className={`px-5 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${
+                tool === 'eraser'
+                  ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white'
+                  : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-300'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              지우개
+            </button>
           </div>
 
           <div className="h-8 w-px bg-indigo-200"></div>
 
+          {/* 색상 선택 (펜 모드일 때만) */}
+          {tool === 'pen' && (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-gray-700">색상:</label>
+                <div className="flex gap-2">
+                  {predefinedColors.map((c) => (
+                    <button
+                      key={c.color}
+                      onClick={() => setColor(c.color)}
+                      className={`w-8 h-8 rounded-lg transition-all shadow-md hover:shadow-lg hover:scale-110 ${
+                        color === c.color ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
+                      }`}
+                      style={{ backgroundColor: c.color }}
+                      title={c.name}
+                    />
+                  ))}
+                  <div className="relative">
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => setColor(e.target.value)}
+                      className="w-8 h-8 rounded-lg border-2 border-indigo-200 cursor-pointer hover:border-indigo-300 transition-colors"
+                      title="커스텀 색상"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-8 w-px bg-indigo-200"></div>
+            </>
+          )}
+
+          {/* 브러시 크기 */}
           <div className="flex items-center gap-3 bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-200">
-            <label className="text-sm font-semibold text-gray-700">브러시 크기:</label>
+            <label className="text-sm font-semibold text-gray-700">
+              {tool === 'pen' ? '브러시' : '지우개'} 크기:
+            </label>
             <input
               type="range"
               min="1"
@@ -206,15 +320,28 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
             </div>
           </div>
 
-          <button
-            onClick={handleClear}
-            className="ml-auto px-5 py-2.5 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-lg hover:from-red-600 hover:to-pink-600 transition-all font-semibold shadow-md hover:shadow-lg flex items-center gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            전체 지우기
-          </button>
+          {/* 실행 취소 및 전체 지우기 */}
+          <div className="ml-auto flex gap-2">
+            <button
+              onClick={handleUndo}
+              className="px-5 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold shadow-md hover:shadow-lg flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              실행 취소
+            </button>
+            
+            <button
+              onClick={handleClear}
+              className="px-5 py-2.5 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-lg hover:from-red-600 hover:to-pink-600 transition-all font-semibold shadow-md hover:shadow-lg flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              전체 지우기
+            </button>
+          </div>
         </div>
       </div>
 
@@ -223,7 +350,7 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
         <div className="relative">
           <canvas
             ref={canvasRef}
-            className="border-4 border-white rounded-lg shadow-2xl"
+            className="border-4 border-white rounded-lg shadow-2xl bg-white"
           />
           {!isFabricLoaded && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-lg">
@@ -233,6 +360,18 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 안내 메시지 */}
+      <div className="bg-indigo-50 border-t-2 border-indigo-100 px-6 py-3">
+        <div className="flex items-center gap-2 text-sm text-indigo-700">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            <strong>실시간 협업:</strong> 다른 사용자가 그린 내용이 자동으로 표시됩니다
+          </span>
         </div>
       </div>
     </div>

@@ -11,6 +11,8 @@ export default function WorkspacePage() {
   const [activeTab, setActiveTab] = useState<'draw' | 'doc'>('draw')
   const [username, setUsername] = useState('')
   const [workspaceId, setWorkspaceId] = useState('default')
+  const [isUserListCollapsed, setIsUserListCollapsed] = useState(false)
+  const [isChatPanelCollapsed, setIsChatPanelCollapsed] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -73,8 +75,60 @@ export default function WorkspacePage() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Users */}
-        <aside className="w-64 bg-white border-r-2 border-indigo-100 flex flex-col shadow-lg">
+        {isUserListCollapsed && (
+          <button
+            onClick={() => setIsUserListCollapsed(false)}
+            className="w-12 bg-gradient-to-b from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-lg hover:shadow-xl transition-all flex flex-col items-center justify-center gap-2 py-8 group hover:w-14"
+            title="참여자 목록 열기"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6 group-hover:scale-110 transition-transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <div className="flex flex-col items-center gap-1">
+              {['참', '여', '자'].map((char, idx) => (
+                <span key={idx} className="text-xs font-bold">{char}</span>
+              ))}
+            </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 group-hover:translate-x-1 transition-transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+        <aside
+          className={`bg-white border-r-2 border-indigo-100 flex flex-col shadow-lg transition-all duration-300 ease-in-out relative ${isUserListCollapsed ? 'w-0' : 'w-64'
+            }`}
+          style={{ overflow: isUserListCollapsed ? 'hidden' : 'visible' }}
+        >
           <UserList workspaceId={workspaceId} />
+          {!isUserListCollapsed && (
+            <button
+              onClick={() => setIsUserListCollapsed(true)}
+              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-r-lg shadow-lg hover:shadow-xl transition-all z-10 flex items-center justify-center group"
+              title="참여자 목록 닫기"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4 transition-transform duration-300 rotate-180"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </aside>
 
         {/* Main Content */}
@@ -85,8 +139,8 @@ export default function WorkspacePage() {
               <button
                 onClick={() => setActiveTab('draw')}
                 className={`px-6 py-3 font-semibold transition-all relative ${activeTab === 'draw'
-                    ? 'text-indigo-700'
-                    : 'text-gray-600 hover:text-indigo-600'
+                  ? 'text-indigo-700'
+                  : 'text-gray-600 hover:text-indigo-600'
                   }`}
               >
                 <div className="flex items-center gap-2">
@@ -102,8 +156,8 @@ export default function WorkspacePage() {
               <button
                 onClick={() => setActiveTab('doc')}
                 className={`px-6 py-3 font-semibold transition-all relative ${activeTab === 'doc'
-                    ? 'text-indigo-700'
-                    : 'text-gray-600 hover:text-indigo-600'
+                  ? 'text-indigo-700'
+                  : 'text-gray-600 hover:text-indigo-600'
                   }`}
               >
                 <div className="flex items-center gap-2">
@@ -126,9 +180,61 @@ export default function WorkspacePage() {
         </main>
 
         {/* Right Sidebar - Chat */}
-        <aside className="w-80 bg-white border-l-2 border-indigo-100 shadow-lg">
+        <aside
+          className={`bg-white border-l-2 border-indigo-100 shadow-lg transition-all duration-300 ease-in-out relative ${isChatPanelCollapsed ? 'w-0' : 'w-80'
+            }`}
+          style={{ overflow: isChatPanelCollapsed ? 'hidden' : 'visible' }}
+        >
           <ChatPanel username={username} workspaceId={workspaceId} />
+          {!isChatPanelCollapsed && (
+            <button
+              onClick={() => setIsChatPanelCollapsed(true)}
+              className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-l-lg shadow-lg hover:shadow-xl transition-all z-10 flex items-center justify-center group"
+              title="채팅 패널 닫기"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4 transition-transform duration-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </aside>
+        {isChatPanelCollapsed && (
+          <button
+            onClick={() => setIsChatPanelCollapsed(false)}
+            className="w-12 bg-gradient-to-b from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-lg hover:shadow-xl transition-all flex flex-col items-center justify-center gap-2 py-8 group hover:w-14"
+            title="채팅 패널 열기"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 group-hover:-translate-x-1 transition-transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <div className="flex flex-col items-center gap-1">
+              {['채', '팅'].map((char, idx) => (
+                <span key={idx} className="text-xs font-bold">{char}</span>
+              ))}
+            </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6 group-hover:scale-110 transition-transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   )

@@ -58,7 +58,6 @@ export default function DrawingBoard({ workspaceId }: DrawingBoardProps) {
           console.log('DrawingBoard: Connected to server, Socket ID:', socket.id)
           socket?.emit('joinDrawing', { username, workspaceId })
           console.log('DrawingBoard: Joined workspace:', workspaceId)
-          console.log('DrawingBoard: Event listeners registered:', socket.eventNames())
         })
 
         socket.on('connect_error', (error: Error) => {

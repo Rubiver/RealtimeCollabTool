@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import ChatPanel from '@/components/ChatPanel'
 import DrawingBoard from '@/components/DrawingBoard'
-import DocumentEditor from '@/components/DocumentEditor'
+import SpreadsheetEditor from '@/components/SpreadsheetEditor'
 import UserList from '@/components/UserList'
 
 export default function WorkspacePage() {
@@ -156,18 +156,18 @@ export default function WorkspacePage() {
               <button
                 onClick={() => setActiveTab('doc')}
                 className={`px-6 py-3 font-semibold transition-all relative ${activeTab === 'doc'
-                  ? 'text-indigo-700'
-                  : 'text-gray-600 hover:text-indigo-600'
+                  ? 'text-green-700'
+                  : 'text-gray-600 hover:text-green-600'
                   }`}
               >
                 <div className="flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                  문서 편집
+                  스프레드시트
                 </div>
                 {activeTab === 'doc' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-full"></div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-green-600 to-emerald-600 rounded-t-full"></div>
                 )}
               </button>
             </div>
@@ -175,7 +175,7 @@ export default function WorkspacePage() {
 
           {/* Content Area */}
           <div className="flex-1 overflow-hidden bg-gradient-to-br from-gray-50 to-indigo-50">
-            {activeTab === 'draw' ? <DrawingBoard workspaceId={workspaceId} /> : <DocumentEditor workspaceId={workspaceId} />}
+            {activeTab === 'draw' ? <DrawingBoard workspaceId={workspaceId} /> : <SpreadsheetEditor workspaceId={workspaceId} />}
           </div>
         </main>
 

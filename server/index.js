@@ -86,7 +86,7 @@ io.on('connection', (socket) => {
     const roomName = `drawing-${workspaceId}`
     socket.join(roomName)
     console.log(`${username} joined drawing room: ${roomName} (Socket: ${socket.id})`)
-    
+
     // 현재 룸에 있는 소켓 확인
     const room = io.sockets.adapter.rooms.get(roomName)
     console.log(`👥 Users in ${roomName}:`, room ? Array.from(room) : [])
@@ -95,24 +95,34 @@ io.on('connection', (socket) => {
   socket.on('drawing', ({ data, workspaceId = 'default' }) => {
     const roomName = `drawing-${workspaceId}`
     console.log(`📤 Broadcasting drawing to workspace: ${workspaceId}, type: ${data.type}, from socket: ${socket.id}`)
-    
+
     // 현재 룸에 있는 소켓 확인
     const room = io.sockets.adapter.rooms.get(roomName)
     console.log(`👥 Current users in ${roomName}:`, room ? Array.from(room) : [])
     console.log(`📨 Broadcasting to ${room ? room.size - 1 : 0} other users`)
-    
+
     socket.to(roomName).emit('drawingUpdate', data)
     console.log(`✅ Drawing broadcasted to ${roomName}`)
   })
 
-  socket.on('joinDocument', ({ username, workspaceId = 'default' }) => {
-    socket.join(`document-${workspaceId}`)
-    console.log(`${username} joined document room for workspace ${workspaceId}`)
+  socket.on('joinSpreadsheet', ({ username, workspaceId = 'default' }) => {
+    const roomName = `spreadsheet-${workspaceId}`
+    socket.join(roomName)
+    console.log(`${username} joined spreadsheet room: ${roomName}`)
   })
 
-  socket.on('documentChange', ({ data, workspaceId = 'default' }) => {
-    // Broadcast document changes only to users in the same workspace
-    socket.to(`document-${workspaceId}`).emit('documentUpdate', data)
+  socket.on('spreadsheetChange', ({ data, workspaceId = 'default' }) => {
+    const roomName = `spreadsheet-${workspaceId}`
+    console.log(`📤 Broadcasting spreadsheet change to ${roomName}`)
+    // Broadcast full spreadsheet data to other users in the same workspace
+    socket.to(roomName).emit('spreadsheetUpdate', data)
+  })
+
+  socket.on('spreadsheetOp', ({ ops, workspaceId = 'default' }) => {
+    const roomName = `spreadsheet-${workspaceId}`
+    console.log(`📤 Broadcasting spreadsheet operations to ${roomName}:`, ops)
+    // Broadcast operations to other users in the same workspace
+    socket.to(roomName).emit('spreadsheetOp', ops)
   })
 
   socket.on('getUsers', ({ workspaceId = 'default' }) => {

@@ -27,7 +27,8 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
             column: 26,
         },
     ])
-    const isLocalChange = useRef(false)
+    const workbookRef = useRef<any>(null)
+    const applyingRemoteOp = useRef(false)
 
     useEffect(() => {
         const username = localStorage.getItem('username')
@@ -38,20 +39,26 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         })
 
         socket.on('connect', () => {
-            socket.emit('joinSpreadsheet', { username, workspaceId })
+            const storage = data;
+            socket.emit('joinSpreadsheet', { username, workspaceId, storage })
         })
 
         // Receive initial data or updates from other users
         socket.on('spreadsheetUpdate', (newData: any) => {
             console.log('📥 Received spreadsheet update:', newData)
-            isLocalChange.current = false
             setData(newData)
         })
 
         // Receive operations from other users
         socket.on('spreadsheetOp', (ops: any[]) => {
+            if (workbookRef.current) {
+                // 중요: 서버에서 온 변경사항을 적용할 때는 flag를 세워서
+                // handleOp가 다시 서버로 emit하지 않도록 합니다.
+                applyingRemoteOp.current = true;
+                workbookRef.current.applyOp(ops);
+                applyingRemoteOp.current = false;
+            }
             console.log('📥 Received spreadsheet operations:', ops)
-            // FortuneSheet will handle the ops automatically
         })
 
         setSocket(socket)
@@ -62,8 +69,10 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
     }, [workspaceId])
 
     const handleOp = (ops: any[]) => {
-        if (!socket || !isLocalChange.current) return
-
+        // 서버에서 온 변경사항 적용 중이거나 소켓이 없으면 무시
+        if (!socket || applyingRemoteOp.current) {
+            return;
+        }
         console.log('📤 Sending operations:', ops)
         socket.emit('spreadsheetOp', {
             ops,
@@ -73,10 +82,10 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
 
     const handleChange = (newData: any) => {
         console.log('📝 Spreadsheet changed:', newData)
-        isLocalChange.current = true
         setData(newData)
 
         if (socket) {
+            // 변경된 전체 데이터를 서버에 저장 (다른 사용자에게는 전파하지 않음)
             socket.emit('spreadsheetChange', {
                 data: newData,
                 workspaceId,
@@ -126,6 +135,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
           `}</style>
                     {typeof window !== 'undefined' && (
                         <Workbook
+                            ref={workbookRef}
                             data={data}
                             onChange={handleChange}
                             onOp={handleOp}

@@ -105,24 +105,41 @@ io.on('connection', (socket) => {
     console.log(`✅ Drawing broadcasted to ${roomName}`)
   })
 
-  socket.on('joinSpreadsheet', ({ username, workspaceId = 'default' }) => {
+  // Store spreadsheet data by workspace
+  const workspaceSheets = new Map()
+
+  // ... existing code ...
+
+  socket.on('joinSpreadsheet', ({ username, workspaceId = 'default', storage }) => {
     const roomName = `spreadsheet-${workspaceId}`
     socket.join(roomName)
     console.log(`${username} joined spreadsheet room: ${roomName}`)
+
+    // If we don't have data for this workspace yet, use the provided storage (initial state)
+    if (!workspaceSheets.has(workspaceId)) {
+      // Use the storage provided by the client, or a default fallback if empty
+      const initialData = (storage && storage.length > 0) ? storage : [{ name: 'Sheet1', celldata: [], row: 50, column: 26 }]
+      workspaceSheets.set(workspaceId, initialData)
+    }
+
+    // Send current server-side state to the newly joined user
+    socket.emit('spreadsheetUpdate', workspaceSheets.get(workspaceId));
   })
 
   socket.on('spreadsheetChange', ({ data, workspaceId = 'default' }) => {
-    const roomName = `spreadsheet-${workspaceId}`
-    console.log(`📤 Broadcasting spreadsheet change to ${roomName}`)
-    // Broadcast full spreadsheet data to other users in the same workspace
-    socket.to(roomName).emit('spreadsheetUpdate', data)
+    // Update the server-side state
+    workspaceSheets.set(workspaceId, data)
+    console.log(`💾 Spreadsheet state saved for workspace ${workspaceId}`)
+
+    // We do NOT broadcast full data update here to avoid conflicts with Op-based sync.
+    // Ops are used for realtime sync. This event determines the "checkpoint" or "full state" for new users.
   })
 
   socket.on('spreadsheetOp', ({ ops, workspaceId = 'default' }) => {
     const roomName = `spreadsheet-${workspaceId}`
     console.log(`📤 Broadcasting spreadsheet operations to ${roomName}:`, ops)
     // Broadcast operations to other users in the same workspace
-    socket.to(roomName).emit('spreadsheetOp', ops)
+    socket.to(`spreadsheet-${workspaceId}`).emit('spreadsheetOp', ops)
   })
 
   socket.on('getUsers', ({ workspaceId = 'default' }) => {

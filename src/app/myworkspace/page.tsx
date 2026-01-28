@@ -18,6 +18,9 @@ export default function WorkspacePage() {
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [inviteCode, setInviteCode] = useState('')
   const [isJoining, setIsJoining] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<Workspace | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -79,7 +82,6 @@ export default function WorkspacePage() {
         alert(result.message)
         setShowJoinModal(false)
         setInviteCode('')
-        // 워크스페이스 목록 새로고침
         loadWorkspaces(username)
       } else {
         alert(result.message || '워크스페이스 입장에 실패했습니다.')
@@ -97,9 +99,53 @@ export default function WorkspacePage() {
     router.push(`/workspace?id=${workspaceId}`)
   }
 
-  const closeModal = () => {
+  const openDeleteModal = (workspace: Workspace, e: React.MouseEvent) => {
+    e.stopPropagation() // 워크스페이스 클릭 이벤트 방지
+    setWorkspaceToDelete(workspace)
+    setShowDeleteModal(true)
+  }
+
+  const handleDeleteWorkspace = async () => {
+    if (!workspaceToDelete) return
+
+    try {
+      setIsDeleting(true)
+      
+      const response = await fetch('/api/workspace/delete', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          workspace_id: workspaceToDelete.id,
+          user_id: username 
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const result = await response.json()
+
+      if (response.ok && result.success) {
+        alert(result.message)
+        setShowDeleteModal(false)
+        setWorkspaceToDelete(null)
+        loadWorkspaces(username)
+      } else {
+        alert(result.message || '워크스페이스 삭제에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('워크스페이스 삭제 오류:', error)
+      alert('서버 오류가 발생했습니다.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const closeJoinModal = () => {
     setShowJoinModal(false)
     setInviteCode('')
+  }
+
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false)
+    setWorkspaceToDelete(null)
   }
 
   if (!username) {
@@ -200,45 +246,62 @@ export default function WorkspacePage() {
               {workspaces.map((workspace) => (
                 <div
                   key={workspace.id}
-                  onClick={() => handleWorkspaceClick(workspace.id)}
-                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer bg-gradient-to-br from-white to-gray-50"
+                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg hover:border-indigo-300 transition-all bg-gradient-to-br from-white to-gray-50 relative group"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md">
-                        {workspace.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-800">
-                          {workspace.name}
-                        </h3>
-                        <p className="text-xs text-gray-500">
-                          소유자: {workspace.owner_id}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2 mt-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  {/* 삭제 버튼 (소유자만 표시) */}
+                  {workspace.owner_id === username && (
+                    <button
+                      onClick={(e) => openDeleteModal(workspace, e)}
+                      className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all opacity-0 group-hover:opacity-100 shadow-md hover:shadow-lg"
+                      title="워크스페이스 삭제"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
-                      <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                        {workspace.invite_code || '초대 코드 없음'}
-                      </span>
+                    </button>
+                  )}
+
+                  <div 
+                    onClick={() => handleWorkspaceClick(workspace.id)}
+                    className="cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md">
+                          {workspace.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-800">
+                            {workspace.name}
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            소유자: {workspace.owner_id}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     
-                    {workspace.create_at && (
+                    <div className="space-y-2 mt-4">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                         </svg>
-                        <span className="text-xs">
-                          {new Date(workspace.create_at).toLocaleDateString('ko-KR')}
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                          {workspace.invite_code || '초대 코드 없음'}
                         </span>
                       </div>
-                    )}
+                      
+                      {workspace.create_at && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-xs">
+                            {new Date(workspace.create_at).toLocaleDateString('ko-KR')}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -251,9 +314,8 @@ export default function WorkspacePage() {
       {showJoinModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6 relative">
-            {/* Close button */}
             <button
-              onClick={closeModal}
+              onClick={closeJoinModal}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -261,7 +323,6 @@ export default function WorkspacePage() {
               </svg>
             </button>
 
-            {/* Modal Header */}
             <div className="mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-lg flex items-center justify-center mx-auto mb-3">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -276,7 +337,6 @@ export default function WorkspacePage() {
               </p>
             </div>
 
-            {/* Modal Body */}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -296,7 +356,6 @@ export default function WorkspacePage() {
                 </p>
               </div>
 
-              {/* Info Box */}
               <div className="bg-purple-50 border-l-4 border-purple-400 p-4 rounded">
                 <div className="flex">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-400 mr-3 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -313,10 +372,9 @@ export default function WorkspacePage() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex gap-3 pt-4">
                 <button
-                  onClick={closeModal}
+                  onClick={closeJoinModal}
                   className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
                 >
                   취소
@@ -337,6 +395,97 @@ export default function WorkspacePage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       입장하기
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Workspace Modal */}
+      {showDeleteModal && workspaceToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6 relative">
+            <button
+              onClick={closeDeleteModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="mb-6">
+              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-500 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">
+                워크스페이스 삭제
+              </h2>
+              <p className="text-center text-gray-600 text-sm">
+                정말로 이 워크스페이스를 삭제하시겠습니까?
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded">
+                <div className="flex">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-400 mr-3 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="text-sm text-red-700">
+                    <p className="font-semibold mb-1">주의</p>
+                    <ul className="list-disc list-inside space-y-1 text-xs">
+                      <li>삭제된 워크스페이스는 복구할 수 없습니다</li>
+                      <li>모든 멤버가 워크스페이스에서 제거됩니다</li>
+                      <li>워크스페이스의 모든 데이터가 삭제됩니다</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <p className="text-sm text-gray-700 mb-2">
+                  <strong>삭제할 워크스페이스:</strong>
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md">
+                    {workspaceToDelete.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">{workspaceToDelete.name}</p>
+                    <p className="text-xs text-gray-500">초대 코드: {workspaceToDelete.invite_code}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={closeDeleteModal}
+                  className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleDeleteWorkspace}
+                  disabled={isDeleting}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg hover:from-red-700 hover:to-pink-700 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-all font-semibold flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      삭제 중...
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      삭제하기
                     </>
                   )}
                 </button>

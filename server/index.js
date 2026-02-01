@@ -108,12 +108,27 @@ io.on('connection', (socket) => {
   // Store spreadsheet data by workspace
   const workspaceSheets = new Map()
 
+  // Store cell cursors by workspace: Map<workspaceId, Map<socketId, cursorInfo>>
+  const workspaceCursors = new Map()
+
+  // Helper to get cursors for a workspace
+  const getCursors = (workspaceId) => {
+    if (!workspaceCursors.has(workspaceId)) {
+      workspaceCursors.set(workspaceId, new Map())
+    }
+    return workspaceCursors.get(workspaceId)
+  }
+
   // ... existing code ...
 
   socket.on('joinSpreadsheet', ({ username, workspaceId = 'default', storage }) => {
     const roomName = `spreadsheet-${workspaceId}`
     socket.join(roomName)
     console.log(`${username} joined spreadsheet room: ${roomName}`)
+
+    // Store username in socket for later use
+    socket.spreadsheetUsername = username
+    socket.spreadsheetWorkspaceId = workspaceId
 
     // If we don't have data for this workspace yet, use the provided storage (initial state)
     if (!workspaceSheets.has(workspaceId)) {
@@ -123,7 +138,47 @@ io.on('connection', (socket) => {
     }
 
     // Send current server-side state to the newly joined user
-    socket.emit('spreadsheetUpdate', workspaceSheets.get(workspaceId));
+    socket.emit('spreadsheetUpdate', workspaceSheets.get(workspaceId))
+
+    // Send existing cursors to the new user
+    const cursors = getCursors(workspaceId)
+    const cursorList = Array.from(cursors.values())
+    socket.emit('spreadsheetCursors', cursorList)
+    console.log(`📍 Sent ${cursorList.length} existing cursors to ${username}`)
+  })
+
+  // Handle cell selection/cursor updates
+  socket.on('cellSelect', ({ username, workspaceId, row, column, sheetIndex, color }) => {
+    const roomName = `spreadsheet-${workspaceId}`
+    const cursors = getCursors(workspaceId)
+
+    const cursorInfo = {
+      socketId: socket.id,
+      username,
+      row,
+      column,
+      sheetIndex,
+      color,
+      timestamp: Date.now()
+    }
+
+    cursors.set(socket.id, cursorInfo)
+
+    // Broadcast cursor update to all other users in the room
+    socket.to(roomName).emit('cursorUpdate', cursorInfo)
+    console.log(`📍 ${username} selected cell [${row}, ${column}] in sheet ${sheetIndex}`)
+  })
+
+  // Handle cursor leave (when user deselects or leaves)
+  socket.on('cellDeselect', ({ workspaceId }) => {
+    const roomName = `spreadsheet-${workspaceId}`
+    const cursors = getCursors(workspaceId)
+
+    if (cursors.has(socket.id)) {
+      cursors.delete(socket.id)
+      socket.to(roomName).emit('cursorRemove', { socketId: socket.id })
+      console.log(`📍 Cursor removed for socket ${socket.id}`)
+    }
   })
 
   socket.on('spreadsheetChange', ({ data, workspaceId = 'default' }) => {
@@ -149,15 +204,23 @@ io.on('connection', (socket) => {
   })
 
   socket.on('disconnect', () => {
-    // Find and remove user from all workspaces
-    let removedUser = null
-    let removedWorkspaceId = null
+    // Remove cursor if user was in a spreadsheet
+    if (socket.spreadsheetWorkspaceId) {
+      const workspaceId = socket.spreadsheetWorkspaceId
+      const roomName = `spreadsheet-${workspaceId}`
+      const cursors = getCursors(workspaceId)
 
+      if (cursors.has(socket.id)) {
+        cursors.delete(socket.id)
+        io.to(roomName).emit('cursorRemove', { socketId: socket.id })
+        console.log(`📍 Cursor removed for disconnected user ${socket.spreadsheetUsername}`)
+      }
+    }
+
+    // Find and remove user from all workspaces
     for (const [workspaceId, users] of workspaceUsers.entries()) {
       const user = users.get(socket.id)
       if (user) {
-        removedUser = user
-        removedWorkspaceId = workspaceId
         users.delete(socket.id)
 
         // Notify others in the workspace

@@ -12,12 +12,26 @@ const io = new Server(server, {
 // Store users by workspace: Map<workspaceId, Map<socketId, user>>
 const workspaceUsers = new Map()
 
+// Store spreadsheet data by workspace (전역으로 이동 - 모든 소켓이 공유)
+const workspaceSheets = new Map()
+
+// Store cell cursors by workspace: Map<workspaceId, Map<socketId, cursorInfo>>
+const workspaceCursors = new Map()
+
 // Helper function to get users in a workspace
 const getWorkspaceUsers = (workspaceId) => {
   if (!workspaceUsers.has(workspaceId)) {
     workspaceUsers.set(workspaceId, new Map())
   }
   return workspaceUsers.get(workspaceId)
+}
+
+// Helper to get cursors for a workspace
+const getCursors = (workspaceId) => {
+  if (!workspaceCursors.has(workspaceId)) {
+    workspaceCursors.set(workspaceId, new Map())
+  }
+  return workspaceCursors.get(workspaceId)
 }
 
 io.on('connection', (socket) => {
@@ -105,21 +119,6 @@ io.on('connection', (socket) => {
     console.log(`✅ Drawing broadcasted to ${roomName}`)
   })
 
-  // Store spreadsheet data by workspace
-  const workspaceSheets = new Map()
-
-  // Store cell cursors by workspace: Map<workspaceId, Map<socketId, cursorInfo>>
-  const workspaceCursors = new Map()
-
-  // Helper to get cursors for a workspace
-  const getCursors = (workspaceId) => {
-    if (!workspaceCursors.has(workspaceId)) {
-      workspaceCursors.set(workspaceId, new Map())
-    }
-    return workspaceCursors.get(workspaceId)
-  }
-
-  // ... existing code ...
 
   socket.on('joinSpreadsheet', ({ username, workspaceId = 'default', storage }) => {
     const roomName = `spreadsheet-${workspaceId}`

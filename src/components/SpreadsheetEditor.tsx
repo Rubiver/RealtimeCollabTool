@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { io, Socket } from 'socket.io-client'
 import dynamic from 'next/dynamic'
 
@@ -146,13 +146,50 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
     const [userColor, setUserColor] = useState<string>('')
     const workbookRef = useRef<any>(null)
     const applyingRemoteOp = useRef(false)
-    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
     const containerRef = useRef<HTMLDivElement>(null)
+    const lastSelectedCell = useRef<{ row: number; column: number } | null>(null)
+    const cellSelectDebounceRef = useRef<NodeJS.Timeout | null>(null)
+
+    // 셀 선택 핸들러를 ref로 관리 (hooks 메모이제이션을 위해)
+    const cellSelectHandlerRef = useRef<(row: number, column: number) => void>(() => {})
 
     // 워크스페이스 입장 시 데이터 불러오기
     useEffect(() => {
         loadSpreadsheetData()
     }, [workspaceId])
+
+    // cellSelectHandler ref 업데이트
+    useEffect(() => {
+        cellSelectHandlerRef.current = (row: number, column: number) => {
+            if (!socket || !currentUsername) return
+
+            // 이전 선택과 같은 셀이면 이벤트 발송하지 않음
+            if (lastSelectedCell.current &&
+                lastSelectedCell.current.row === row &&
+                lastSelectedCell.current.column === column) {
+                return
+            }
+
+            lastSelectedCell.current = { row, column }
+
+            // 디바운스: 빠른 연속 선택 방지
+            if (cellSelectDebounceRef.current) {
+                clearTimeout(cellSelectDebounceRef.current)
+            }
+
+            cellSelectDebounceRef.current = setTimeout(() => {
+                socket.emit('cellSelect', {
+                    username: currentUsername,
+                    workspaceId,
+                    row,
+                    column,
+                    sheetIndex: 0,
+                    color: userColor,
+                })
+                console.log(`📍 Selected cell [${row}, ${column}]`)
+            }, 100)
+        }
+    }, [socket, currentUsername, workspaceId, userColor])
 
     // Socket.IO 연결
     useEffect(() => {
@@ -163,22 +200,22 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         const color = generateUserColor(username)
         setUserColor(color)
 
-        const socket = io('http://localhost:3001', {
+        const newSocket = io('http://localhost:3001', {
             transports: ['websocket'],
         })
 
-        socket.on('connect', () => {
-            socket.emit('joinSpreadsheet', { username, workspaceId, storage: data })
+        newSocket.on('connect', () => {
+            newSocket.emit('joinSpreadsheet', { username, workspaceId })
         })
 
         // Receive initial data or updates from other users
-        socket.on('spreadsheetUpdate', (newData: any) => {
+        newSocket.on('spreadsheetUpdate', (newData: any) => {
             console.log('📥 Received spreadsheet update:', newData)
             setData(newData)
         })
 
         // Receive operations from other users
-        socket.on('spreadsheetOp', (ops: any[]) => {
+        newSocket.on('spreadsheetOp', (ops: any[]) => {
             if (workbookRef.current) {
                 applyingRemoteOp.current = true
                 workbookRef.current.applyOp(ops)
@@ -188,7 +225,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         })
 
         // Receive existing cursors when joining
-        socket.on('spreadsheetCursors', (cursors: CursorInfo[]) => {
+        newSocket.on('spreadsheetCursors', (cursors: CursorInfo[]) => {
             console.log('📍 Received existing cursors:', cursors)
             const cursorMap = new Map<string, CursorInfo>()
             cursors.forEach(cursor => {
@@ -200,7 +237,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         })
 
         // Receive cursor updates from other users
-        socket.on('cursorUpdate', (cursor: CursorInfo) => {
+        newSocket.on('cursorUpdate', (cursor: CursorInfo) => {
             console.log('📍 Cursor update:', cursor)
             if (cursor.username !== username) {
                 setRemoteCursors(prev => {
@@ -212,7 +249,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         })
 
         // Remove cursor when user leaves
-        socket.on('cursorRemove', ({ socketId }: { socketId: string }) => {
+        newSocket.on('cursorRemove', ({ socketId }: { socketId: string }) => {
             console.log('📍 Cursor removed:', socketId)
             setRemoteCursors(prev => {
                 const newMap = new Map(prev)
@@ -221,22 +258,13 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
             })
         })
 
-        setSocket(socket)
+        setSocket(newSocket)
 
         return () => {
-            socket.emit('cellDeselect', { workspaceId })
-            socket.close()
+            newSocket.emit('cellDeselect', { workspaceId })
+            newSocket.close()
         }
     }, [workspaceId])
-
-    // 자동 저장 타이머 정리
-    useEffect(() => {
-        return () => {
-            if (autoSaveTimerRef.current) {
-                clearTimeout(autoSaveTimerRef.current)
-            }
-        }
-    }, [])
 
     // 스프레드시트 데이터 불러오기
     const loadSpreadsheetData = async () => {
@@ -296,7 +324,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         saveSpreadsheetData(data)
     }
 
-    const handleOp = (ops: any[]) => {
+    const handleOp = useCallback((ops: any[]) => {
         if (!socket || applyingRemoteOp.current) {
             return
         }
@@ -305,24 +333,9 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
             ops,
             workspaceId,
         })
-    }
+    }, [socket, workspaceId])
 
-    // 셀 선택 핸들러
-    const handleCellSelect = useCallback((cell: { row: number; column: number }, sheetIndex: number) => {
-        if (!socket || !currentUsername) return
-
-        socket.emit('cellSelect', {
-            username: currentUsername,
-            workspaceId,
-            row: cell.row,
-            column: cell.column,
-            sheetIndex,
-            color: userColor,
-        })
-        console.log(`📍 Selected cell [${cell.row}, ${cell.column}]`)
-    }, [socket, currentUsername, workspaceId, userColor])
-
-    const handleChange = (newData: any) => {
+    const handleChange = useCallback((newData: any) => {
         console.log('📝 Spreadsheet changed:', newData)
         setData(newData)
 
@@ -333,15 +346,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                 workspaceId,
             })
         }
-
-        // 자동 저장 타이머 설정 (5초 후 저장)
-        if (autoSaveTimerRef.current) {
-            clearTimeout(autoSaveTimerRef.current)
-        }
-        autoSaveTimerRef.current = setTimeout(() => {
-            saveSpreadsheetData(newData)
-        }, 5000)
-    }
+    }, [socket, workspaceId])
 
     const formatLastSaved = () => {
         if (!lastSaved) return '저장 안됨'
@@ -355,6 +360,15 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
             minute: '2-digit',
         })
     }
+
+    // hooks를 메모이제이션하여 Workbook 리렌더링 방지
+    const workbookHooks = useMemo(() => ({
+        afterSelectionChange: (_sheetId: string, selection: { row: number[], column: number[] }) => {
+            if (selection && selection.row && selection.column) {
+                cellSelectHandlerRef.current(selection.row[0], selection.column[0])
+            }
+        }
+    }), [])
 
     if (isLoading) {
         return (
@@ -517,33 +531,12 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                             data={data}
                             onChange={handleChange}
                             onOp={handleOp}
-                            hooks={{
-                                afterSelectionChange: (_sheetId: string, selection: { row: number[], column: number[] }) => {
-                                    if (selection && selection.row && selection.column) {
-                                        handleCellSelect({
-                                            row: selection.row[0],
-                                            column: selection.column[0]
-                                        }, 0)
-                                    }
-                                }
-                            }}
+                            hooks={workbookHooks}
                         />
                     )}
 
                     {/* 다른 사용자 커서 표시 */}
                     <CursorOverlay cursors={remoteCursors} containerRef={containerRef} />
-                </div>
-            </div>
-
-            {/* 자동 저장 안내 */}
-            <div className="bg-green-50 border-t-2 border-green-100 px-6 py-3">
-                <div className="flex items-center gap-2 text-sm text-green-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>
-                        <strong>자동 저장:</strong> 변경 사항은 5초 후 자동으로 저장됩니다. "저장" 버튼을 눌러 즉시 저장할 수도 있습니다.
-                    </span>
                 </div>
             </div>
         </div>

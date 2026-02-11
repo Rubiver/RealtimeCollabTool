@@ -1,17 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { io, Socket } from 'socket.io-client'
-import dynamic from 'next/dynamic'
-
-// Dynamic import to avoid SSR issues
-const Workbook = dynamic(
-    () => import('@fortune-sheet/react').then((mod) => mod.Workbook),
-    { ssr: false }
-)
-
-// Import FortuneSheet CSS
-import '@fortune-sheet/react/dist/index.css'
+import '@univerjs/preset-sheets-core/lib/index.css'
 
 interface SpreadsheetEditorProps {
     workspaceId: string
@@ -22,15 +13,13 @@ interface CursorInfo {
     username: string
     row: number
     column: number
-    sheetIndex: number
     color: string
-    timestamp: number
 }
 
 // 사용자별 고유 색상 생성
 const generateUserColor = (username: string): string => {
     const colors = [
-        '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+        '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
         '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
         '#F1948A', '#82E0AA', '#F8C471', '#D7BDE2', '#A3E4D7'
     ]
@@ -41,258 +30,292 @@ const generateUserColor = (username: string): string => {
     return colors[Math.abs(hash) % colors.length]
 }
 
-// 커서 오버레이 컴포넌트
-function CursorOverlay({ cursors, containerRef }: { cursors: Map<string, CursorInfo>, containerRef: React.RefObject<HTMLDivElement | null> }) {
-    const [cursorPositions, setCursorPositions] = useState<Map<string, { left: number, top: number, width: number, height: number }>>(new Map())
-
-    useEffect(() => {
-        const updatePositions = () => {
-            if (!containerRef.current) return
-
-            const container = containerRef.current
-            const gridContainer = container.querySelector('.luckysheet-cell-main')
-            if (!gridContainer) return
-
-            const newPositions = new Map<string, { left: number, top: number, width: number, height: number }>()
-
-            cursors.forEach((cursor, socketId) => {
-                // FortuneSheet 셀 위치 계산
-                const rowHeader = container.querySelector(`.luckysheet-rows-h .luckysheet-rows-h-cells div[data-r="${cursor.row}"]`) as HTMLElement
-                const colHeader = container.querySelector(`.luckysheet-cols-h-cells div[data-c="${cursor.column}"]`) as HTMLElement
-
-                if (rowHeader && colHeader) {
-                    const containerRect = container.getBoundingClientRect()
-                    const rowRect = rowHeader.getBoundingClientRect()
-                    const colRect = colHeader.getBoundingClientRect()
-
-                    newPositions.set(socketId, {
-                        left: colRect.left - containerRect.left,
-                        top: rowRect.top - containerRect.top,
-                        width: colRect.width,
-                        height: rowRect.height
-                    })
-                } else {
-                    // 기본 셀 크기로 계산 (대략적인 위치)
-                    const defaultColWidth = 73
-                    const defaultRowHeight = 20
-                    const headerOffset = 46 // 툴바 + 헤더 높이
-                    const rowHeaderOffset = 46 // 행 헤더 너비
-
-                    newPositions.set(socketId, {
-                        left: rowHeaderOffset + (cursor.column * defaultColWidth),
-                        top: headerOffset + (cursor.row * defaultRowHeight),
-                        width: defaultColWidth,
-                        height: defaultRowHeight
-                    })
-                }
-            })
-
-            setCursorPositions(newPositions)
-        }
-
-        updatePositions()
-        const interval = setInterval(updatePositions, 500)
-
-        return () => clearInterval(interval)
-    }, [cursors, containerRef])
-
-    return (
-        <>
-            {Array.from(cursors.entries()).map(([socketId, cursor]) => {
-                const position = cursorPositions.get(socketId)
-                if (!position) return null
-
-                return (
-                    <div
-                        key={socketId}
-                        className="remote-cursor-indicator"
-                        style={{
-                            left: position.left,
-                            top: position.top,
-                            width: position.width,
-                            height: position.height,
-                            borderColor: cursor.color,
-                            backgroundColor: `${cursor.color}20`,
-                        }}
-                    >
-                        <div
-                            className="remote-cursor-label"
-                            style={{ backgroundColor: cursor.color }}
-                        >
-                            {cursor.username}
-                        </div>
-                    </div>
-                )
-            })}
-        </>
-    )
-}
-
 export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProps) {
-    const [socket, setSocket] = useState<Socket | null>(null)
-    const [data, setData] = useState([
-        {
-            name: 'Sheet1',
-            celldata: [],
-            row: 50,
-            column: 26,
-        },
-    ])
+    const containerRef = useRef<HTMLDivElement>(null)
+    const univerRef = useRef<any>(null)
+    const socketRef = useRef<Socket | null>(null)
+    const applyingRemote = useRef(false)
+    const disposablesRef = useRef<any[]>([])
+    const lastSelectedCell = useRef<{ row: number; column: number } | null>(null)
+
+    const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
     const [lastSaved, setLastSaved] = useState<Date | null>(null)
-    const [isLoading, setIsLoading] = useState(true)
     const [remoteCursors, setRemoteCursors] = useState<Map<string, CursorInfo>>(new Map())
-    const [currentUsername, setCurrentUsername] = useState<string>('')
-    const [userColor, setUserColor] = useState<string>('')
-    const workbookRef = useRef<any>(null)
-    const applyingRemoteOp = useRef(false)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const lastSelectedCell = useRef<{ row: number; column: number } | null>(null)
-    const cellSelectDebounceRef = useRef<NodeJS.Timeout | null>(null)
+    const [currentUsername, setCurrentUsername] = useState('')
+    const [userColor, setUserColor] = useState('')
 
-    // 셀 선택 핸들러를 ref로 관리 (hooks 메모이제이션을 위해)
-    const cellSelectHandlerRef = useRef<(row: number, column: number) => void>(() => {})
-
-    // 워크스페이스 입장 시 데이터 불러오기
-    useEffect(() => {
-        loadSpreadsheetData()
-    }, [workspaceId])
-
-    // cellSelectHandler ref 업데이트
-    useEffect(() => {
-        cellSelectHandlerRef.current = (row: number, column: number) => {
-            if (!socket || !currentUsername) return
-
-            // 이전 선택과 같은 셀이면 이벤트 발송하지 않음
-            if (lastSelectedCell.current &&
-                lastSelectedCell.current.row === row &&
-                lastSelectedCell.current.column === column) {
-                return
-            }
-
-            lastSelectedCell.current = { row, column }
-
-            // 디바운스: 빠른 연속 선택 방지
-            if (cellSelectDebounceRef.current) {
-                clearTimeout(cellSelectDebounceRef.current)
-            }
-
-            cellSelectDebounceRef.current = setTimeout(() => {
-                socket.emit('cellSelect', {
-                    username: currentUsername,
-                    workspaceId,
-                    row,
-                    column,
-                    sheetIndex: 0,
-                    color: userColor,
-                })
-                console.log(`📍 Selected cell [${row}, ${column}]`)
-            }, 100)
-        }
-    }, [socket, currentUsername, workspaceId, userColor])
-
-    // Socket.IO 연결
+    // Univer 초기화 + Socket.IO 연결
     useEffect(() => {
         const username = localStorage.getItem('username')
-        if (!username) return
+        if (!username || !containerRef.current) return
 
         setCurrentUsername(username)
         const color = generateUserColor(username)
         setUserColor(color)
 
-        const newSocket = io('http://localhost:3001', {
-            transports: ['websocket'],
-        })
+        let disposed = false
 
-        newSocket.on('connect', () => {
-            newSocket.emit('joinSpreadsheet', { username, workspaceId })
-        })
+        const init = async () => {
+            // Univer 모듈 동적 import (SSR 방지)
+            const { createUniver, LocaleType, mergeLocales } = await import('@univerjs/presets')
+            const { UniverSheetsCorePreset } = await import('@univerjs/preset-sheets-core')
+            const UniverPresetSheetsCoreKoKR = (await import('@univerjs/preset-sheets-core/locales/ko-KR')).default
 
-        // Receive initial data or updates from other users
-        newSocket.on('spreadsheetUpdate', (newData: any) => {
-            console.log('📥 Received spreadsheet update:', newData)
-            setData(newData)
-        })
+            if (disposed) return
 
-        // Receive operations from other users
-        newSocket.on('spreadsheetOp', (ops: any[]) => {
-            if (workbookRef.current) {
-                applyingRemoteOp.current = true
-                workbookRef.current.applyOp(ops)
-                applyingRemoteOp.current = false
+            // 기존 스프레드시트 데이터 불러오기
+            let initialData: any = null
+            try {
+                const response = await fetch('/api/workspace/spreadsheet/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workspaceId }),
+                })
+                const result = await response.json()
+                if (result.data) {
+                    initialData = result.data
+                    if (result.exists && result.updatedAt) {
+                        setLastSaved(new Date(result.updatedAt))
+                    }
+                }
+            } catch (error) {
+                console.error('스프레드시트 불러오기 실패:', error)
             }
-            console.log('📥 Received spreadsheet operations:', ops)
-        })
 
-        // Receive existing cursors when joining
-        newSocket.on('spreadsheetCursors', (cursors: CursorInfo[]) => {
-            console.log('📍 Received existing cursors:', cursors)
-            const cursorMap = new Map<string, CursorInfo>()
-            cursors.forEach(cursor => {
+            if (disposed) return
+
+            // Univer 인스턴스 생성
+            const { univerAPI } = createUniver({
+                locale: LocaleType.KO_KR,
+                locales: {
+                    [LocaleType.KO_KR]: mergeLocales(UniverPresetSheetsCoreKoKR),
+                },
+                presets: [
+                    UniverSheetsCorePreset({
+                        container: containerRef.current!,
+                    }),
+                ],
+            })
+
+            if (disposed) {
+                univerAPI.dispose()
+                return
+            }
+
+            univerRef.current = univerAPI
+
+            // 워크북 생성 (저장된 데이터 또는 빈 워크북)
+            if (initialData && initialData.id) {
+                univerAPI.createWorkbook(initialData)
+            } else {
+                univerAPI.createWorkbook({})
+            }
+
+            setIsLoading(false)
+
+            // Socket.IO 연결
+            const socket = io('http://localhost:3001', {
+                transports: ['websocket'],
+            })
+            socketRef.current = socket
+
+            socket.on('connect', () => {
+                // 현재 워크북 스냅샷을 서버에 전송
+                const workbook = univerAPI.getActiveWorkbook()
+                const snapshot = workbook ? workbook.save() : null
+                socket.emit('joinSpreadsheet', {
+                    username,
+                    workspaceId,
+                    snapshot,
+                })
+            })
+
+            // 다른 사용자의 셀 변경 수신
+            socket.on('cellChanged', (change: { row: number; column: number; value: any; username: string }) => {
+                if (change.username === username) return
+
+                applyingRemote.current = true
+                try {
+                    const workbook = univerAPI.getActiveWorkbook()
+                    if (workbook) {
+                        const sheet = workbook.getActiveSheet()
+                        if (sheet) {
+                            const range = sheet.getRange(change.row, change.column)
+                            if (change.value !== null && change.value !== undefined) {
+                                range.setValue(change.value)
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('원격 셀 변경 적용 실패:', e)
+                }
+                // 짧은 딜레이 후 applyingRemote를 false로 설정
+                setTimeout(() => {
+                    applyingRemote.current = false
+                }, 50)
+            })
+
+            // 전체 스냅샷 수신 (새 사용자 입장 시)
+            socket.on('spreadsheetSnapshot', (snapshot: any) => {
+                if (!snapshot) return
+                console.log('📥 전체 스냅샷 수신')
+
+                applyingRemote.current = true
+                try {
+                    const workbook = univerAPI.getActiveWorkbook()
+                    if (workbook && snapshot.sheets) {
+                        const sheet = workbook.getActiveSheet()
+                        if (sheet) {
+                            const sheetData = Object.values(snapshot.sheets)[0] as any
+                            if (sheetData?.cellData) {
+                                for (const [rowStr, cols] of Object.entries(sheetData.cellData)) {
+                                    for (const [colStr, cell] of Object.entries(cols as any)) {
+                                        const cellData = cell as any
+                                        if (cellData && cellData.v !== undefined) {
+                                            sheet.getRange(Number(rowStr), Number(colStr)).setValue(cellData.v)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('스냅샷 적용 실패:', e)
+                }
+                setTimeout(() => {
+                    applyingRemote.current = false
+                }, 100)
+            })
+
+            // 커서 관련 소켓 이벤트
+            socket.on('spreadsheetCursors', (cursors: CursorInfo[]) => {
+                const cursorMap = new Map<string, CursorInfo>()
+                cursors.forEach(cursor => {
+                    if (cursor.username !== username) {
+                        cursorMap.set(cursor.socketId, cursor)
+                    }
+                })
+                setRemoteCursors(cursorMap)
+            })
+
+            socket.on('cursorUpdate', (cursor: CursorInfo) => {
                 if (cursor.username !== username) {
-                    cursorMap.set(cursor.socketId, cursor)
+                    setRemoteCursors(prev => {
+                        const newMap = new Map(prev)
+                        newMap.set(cursor.socketId, cursor)
+                        return newMap
+                    })
                 }
             })
-            setRemoteCursors(cursorMap)
-        })
 
-        // Receive cursor updates from other users
-        newSocket.on('cursorUpdate', (cursor: CursorInfo) => {
-            console.log('📍 Cursor update:', cursor)
-            if (cursor.username !== username) {
+            socket.on('cursorRemove', ({ socketId }: { socketId: string }) => {
                 setRemoteCursors(prev => {
                     const newMap = new Map(prev)
-                    newMap.set(cursor.socketId, cursor)
+                    newMap.delete(socketId)
                     return newMap
                 })
-            }
-        })
-
-        // Remove cursor when user leaves
-        newSocket.on('cursorRemove', ({ socketId }: { socketId: string }) => {
-            console.log('📍 Cursor removed:', socketId)
-            setRemoteCursors(prev => {
-                const newMap = new Map(prev)
-                newMap.delete(socketId)
-                return newMap
             })
-        })
 
-        setSocket(newSocket)
+            // 셀 값 변경 이벤트 리스닝
+            const valueDisposable = univerAPI.addEvent(
+                univerAPI.Event.SheetValueChanged,
+                (params: any) => {
+                    if (applyingRemote.current || !socketRef.current) return
+
+                    // 변경된 셀 정보 추출
+                    const workbook = univerAPI.getActiveWorkbook()
+                    if (!workbook) return
+
+                    const sheet = workbook.getActiveSheet()
+                    if (!sheet) return
+
+                    // 현재 선택된 셀의 값을 가져와서 전송
+                    const selection = sheet.getSelection()
+                    if (selection) {
+                        const activeRange = selection.getActiveRange()
+                        if (activeRange) {
+                            const row = activeRange.getRow()
+                            const col = activeRange.getColumn()
+                            const values = activeRange.getValues()
+                            const value = values?.[0]?.[0] ?? null
+
+                            socketRef.current.emit('cellChange', {
+                                workspaceId,
+                                username,
+                                row,
+                                column: col,
+                                value,
+                            })
+                            console.log(`📤 셀 변경 전송: [${row}, ${col}] = ${value}`)
+                        }
+                    }
+                }
+            )
+            disposablesRef.current.push(valueDisposable)
+
+            // 셀 선택 변경 이벤트 리스닝
+            const selectionDisposable = univerAPI.addEvent(
+                univerAPI.Event.SelectionChanged,
+                (params: any) => {
+                    if (!socketRef.current) return
+
+                    const selections = params?.selections
+                    if (!selections || selections.length === 0) return
+
+                    const sel = selections[0]
+                    const row = sel.range?.startRow ?? sel.startRow
+                    const col = sel.range?.startColumn ?? sel.startColumn
+
+                    if (typeof row !== 'number' || typeof col !== 'number') return
+
+                    // 같은 셀이면 무시
+                    if (lastSelectedCell.current &&
+                        lastSelectedCell.current.row === row &&
+                        lastSelectedCell.current.column === col) {
+                        return
+                    }
+                    lastSelectedCell.current = { row, column: col }
+
+                    socketRef.current.emit('cellSelect', {
+                        username,
+                        workspaceId,
+                        row,
+                        column: col,
+                        color,
+                    })
+                }
+            )
+            disposablesRef.current.push(selectionDisposable)
+        }
+
+        init()
 
         return () => {
-            newSocket.emit('cellDeselect', { workspaceId })
-            newSocket.close()
+            disposed = true
+            disposablesRef.current.forEach(d => d?.dispose?.())
+            disposablesRef.current = []
+            if (socketRef.current) {
+                socketRef.current.emit('cellDeselect', { workspaceId })
+                socketRef.current.close()
+                socketRef.current = null
+            }
+            if (univerRef.current) {
+                univerRef.current.dispose()
+                univerRef.current = null
+            }
         }
     }, [workspaceId])
 
-    // 스프레드시트 데이터 불러오기
-    const loadSpreadsheetData = async () => {
-        try {
-            setIsLoading(true)
-            const response = await fetch('/api/workspace/spreadsheet/load', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ workspaceId }),
-            })
+    // 수동 저장
+    const handleManualSave = async () => {
+        if (!univerRef.current) return
 
-            const result = await response.json()
+        const workbook = univerRef.current.getActiveWorkbook()
+        if (!workbook) return
 
-            if (result.data) {
-                setData(result.data)
-                if (result.exists && result.updatedAt) {
-                    setLastSaved(new Date(result.updatedAt))
-                }
-            }
-        } catch (error) {
-            console.error('스프레드시트 불러오기 실패:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }
+        const snapshot = workbook.save()
 
-    // 스프레드시트 데이터 저장
-    const saveSpreadsheetData = async (dataToSave: any) => {
         try {
             setIsSaving(true)
             const response = await fetch('/api/workspace/spreadsheet/save', {
@@ -300,17 +323,13 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     workspaceId,
-                    data: dataToSave,
+                    data: snapshot,
                 }),
             })
-
             const result = await response.json()
-
             if (result.success) {
                 setLastSaved(new Date())
                 console.log('✅ 스프레드시트 저장 완료')
-            } else {
-                console.error('❌ 스프레드시트 저장 실패:', result.message)
             }
         } catch (error) {
             console.error('스프레드시트 저장 오류:', error)
@@ -318,35 +337,6 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
             setIsSaving(false)
         }
     }
-
-    // 수동 저장 버튼
-    const handleManualSave = () => {
-        saveSpreadsheetData(data)
-    }
-
-    const handleOp = useCallback((ops: any[]) => {
-        if (!socket || applyingRemoteOp.current) {
-            return
-        }
-        console.log('📤 Sending operations:', ops)
-        socket.emit('spreadsheetOp', {
-            ops,
-            workspaceId,
-        })
-    }, [socket, workspaceId])
-
-    const handleChange = useCallback((newData: any) => {
-        console.log('📝 Spreadsheet changed:', newData)
-        setData(newData)
-
-        // 실시간 동기화를 위해 소켓으로 전송
-        if (socket) {
-            socket.emit('spreadsheetChange', {
-                data: newData,
-                workspaceId,
-            })
-        }
-    }, [socket, workspaceId])
 
     const formatLastSaved = () => {
         if (!lastSaved) return '저장 안됨'
@@ -361,45 +351,9 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         })
     }
 
-    // hooks를 메모이제이션하여 Workbook 리렌더링 방지
-    const workbookHooks = useMemo(() => ({
-        afterSelectionChange: (_sheetId: string, selection: { row: number[], column: number[] }) => {
-            if (selection && selection.row && selection.column) {
-                cellSelectHandlerRef.current(selection.row[0], selection.column[0])
-            }
-        }
-    }), [])
-
-    if (isLoading) {
-        return (
-            <div className="h-full flex flex-col">
-                <div className="bg-white border-b-2 border-indigo-100 px-6 py-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center shadow-md">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                                공동 스프레드시트
-                            </h2>
-                            <p className="text-sm text-gray-600">데이터를 불러오는 중...</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-50">
-                    <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-3"></div>
-                        <p className="text-sm text-gray-600">스프레드시트를 불러오는 중입니다...</p>
-                    </div>
-                </div>
-            </div>
-        )
-    }
-
     return (
         <div className="h-full flex flex-col">
+            {/* 헤더 */}
             <div className="bg-white border-b-2 border-indigo-100 px-6 py-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -423,17 +377,15 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                         <div className="flex items-center gap-2">
                             <span className="text-sm text-gray-500">접속 중:</span>
                             <div className="flex items-center -space-x-2">
-                                {/* 본인 표시 */}
                                 {currentUsername && (
                                     <div
-                                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-md"
+                                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-md z-10"
                                         style={{ backgroundColor: userColor }}
                                         title={`${currentUsername} (나)`}
                                     >
                                         {currentUsername.charAt(0).toUpperCase()}
                                     </div>
                                 )}
-                                {/* 다른 사용자들 표시 */}
                                 {Array.from(remoteCursors.values()).map((cursor) => (
                                     <div
                                         key={cursor.socketId}
@@ -450,7 +402,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                             </span>
                         </div>
 
-                        {/* 저장 상태 표시 */}
+                        {/* 저장 상태 */}
                         <div className="flex items-center gap-2 text-sm text-gray-600">
                             {isSaving ? (
                                 <>
@@ -467,7 +419,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                             )}
                         </div>
 
-                        {/* 수동 저장 버튼 */}
+                        {/* 저장 버튼 */}
                         <button
                             onClick={handleManualSave}
                             disabled={isSaving}
@@ -481,63 +433,83 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                     </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 p-4">
-                <div ref={containerRef} className="h-full bg-white rounded-lg shadow-2xl border-2 border-green-100 overflow-hidden relative">
-                    <style jsx global>{`
-                        .fortune-sheet-container {
-                            width: 100% !important;
-                            height: 100% !important;
-                        }
-                        .luckysheet {
-                            width: 100% !important;
-                            height: 100% !important;
-                        }
-                        .luckysheet-grid-container {
-                            background: white !important;
-                        }
-                        .luckysheet-toolbar-button:hover {
-                            background: #10b981 !important;
-                        }
-                        .luckysheet-cols-rows-shift-size {
-                            background: #10b981 !important;
-                        }
-                        .remote-cursor-indicator {
-                            position: absolute;
-                            pointer-events: none;
-                            z-index: 1000;
-                            border: 2px solid;
-                            animation: pulse 2s infinite;
-                        }
-                        .remote-cursor-label {
-                            position: absolute;
-                            top: -24px;
-                            left: 0;
-                            padding: 2px 8px;
-                            border-radius: 4px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: white;
-                            white-space: nowrap;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                        }
-                        @keyframes pulse {
-                            0%, 100% { opacity: 1; }
-                            50% { opacity: 0.7; }
-                        }
-                    `}</style>
-                    {typeof window !== 'undefined' && (
-                        <Workbook
-                            ref={workbookRef}
-                            data={data}
-                            onChange={handleChange}
-                            onOp={handleOp}
-                            hooks={workbookHooks}
-                        />
-                    )}
+
+            {/* 스프레드시트 영역 */}
+            <div className="flex-1 overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 p-4 relative">
+                {isLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-50">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-3"></div>
+                            <p className="text-sm text-gray-600">스프레드시트를 불러오는 중입니다...</p>
+                        </div>
+                    </div>
+                )}
+
+                <div className="h-full bg-white rounded-lg shadow-2xl border-2 border-green-100 overflow-hidden relative">
+                    {/* Univer가 렌더링될 컨테이너 */}
+                    <div ref={containerRef} className="w-full h-full" />
 
                     {/* 다른 사용자 커서 표시 */}
-                    <CursorOverlay cursors={remoteCursors} containerRef={containerRef} />
+                    {Array.from(remoteCursors.values()).map((cursor) => (
+                        <CursorBadge key={cursor.socketId} cursor={cursor} containerRef={containerRef} />
+                    ))}
                 </div>
+            </div>
+        </div>
+    )
+}
+
+// 커서 배지 컴포넌트 (각 사용자별)
+function CursorBadge({ cursor, containerRef }: { cursor: CursorInfo; containerRef: React.RefObject<HTMLDivElement | null> }) {
+    const [pos, setPos] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
+
+    useEffect(() => {
+        const update = () => {
+            if (!containerRef.current) return
+
+            const container = containerRef.current
+
+            // Univer의 셀 요소 찾기
+            const cellElements = container.querySelectorAll('[class*="univer-sheet-cell"]')
+            // 기본 위치 계산 (대략적)
+            const defaultColWidth = 88
+            const defaultRowHeight = 24
+            const headerHeight = 80 // 툴바 + 수식바 + 열 헤더
+            const rowHeaderWidth = 46
+
+            setPos({
+                left: rowHeaderWidth + (cursor.column * defaultColWidth),
+                top: headerHeight + (cursor.row * defaultRowHeight),
+                width: defaultColWidth,
+                height: defaultRowHeight,
+            })
+        }
+
+        update()
+        const interval = setInterval(update, 1000)
+        return () => clearInterval(interval)
+    }, [cursor.row, cursor.column, containerRef])
+
+    if (!pos) return null
+
+    return (
+        <div
+            className="absolute pointer-events-none z-[1000]"
+            style={{
+                left: pos.left,
+                top: pos.top,
+                width: pos.width,
+                height: pos.height,
+                border: `2px solid ${cursor.color}`,
+                backgroundColor: `${cursor.color}15`,
+                transition: 'all 0.2s ease',
+            }}
+        >
+            <div
+                className="absolute -top-6 left-0 px-2 py-0.5 rounded text-[11px] font-semibold text-white whitespace-nowrap shadow-md"
+                style={{ backgroundColor: cursor.color }}
+            >
+                {cursor.username}
             </div>
         </div>
     )

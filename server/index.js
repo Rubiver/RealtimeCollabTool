@@ -120,34 +120,57 @@ io.on('connection', (socket) => {
   })
 
 
-  socket.on('joinSpreadsheet', ({ username, workspaceId = 'default', storage }) => {
+  // ======== 스프레드시트 (Univer 기반) ========
+
+  socket.on('joinSpreadsheet', ({ username, workspaceId = 'default', snapshot }) => {
     const roomName = `spreadsheet-${workspaceId}`
     socket.join(roomName)
-    console.log(`${username} joined spreadsheet room: ${roomName}`)
+    console.log(`📊 ${username} joined spreadsheet room: ${roomName}`)
 
-    // Store username in socket for later use
     socket.spreadsheetUsername = username
     socket.spreadsheetWorkspaceId = workspaceId
 
-    // If we don't have data for this workspace yet, use the provided storage (initial state)
-    if (!workspaceSheets.has(workspaceId)) {
-      // Use the storage provided by the client, or a default fallback if empty
-      const initialData = (storage && storage.length > 0) ? storage : [{ name: 'Sheet1', celldata: [], row: 50, column: 26 }]
-      workspaceSheets.set(workspaceId, initialData)
+    // 서버에 스냅샷이 있으면 새 사용자에게 전송
+    if (workspaceSheets.has(workspaceId)) {
+      socket.emit('spreadsheetSnapshot', workspaceSheets.get(workspaceId))
+      console.log(`📊 Sent existing snapshot to ${username}`)
+    } else if (snapshot) {
+      // 첫 번째 사용자의 스냅샷을 서버에 저장
+      workspaceSheets.set(workspaceId, snapshot)
+      console.log(`📊 Saved initial snapshot from ${username}`)
     }
 
-    // Send current server-side state to the newly joined user
-    socket.emit('spreadsheetUpdate', workspaceSheets.get(workspaceId))
-
-    // Send existing cursors to the new user
+    // 기존 커서 정보 전송
     const cursors = getCursors(workspaceId)
-    const cursorList = Array.from(cursors.values())
-    socket.emit('spreadsheetCursors', cursorList)
-    console.log(`📍 Sent ${cursorList.length} existing cursors to ${username}`)
+    socket.emit('spreadsheetCursors', Array.from(cursors.values()))
   })
 
-  // Handle cell selection/cursor updates
-  socket.on('cellSelect', ({ username, workspaceId, row, column, sheetIndex, color }) => {
+  // 셀 단위 변경 이벤트 (실시간 동기화 핵심)
+  socket.on('cellChange', ({ workspaceId, username, row, column, value }) => {
+    const roomName = `spreadsheet-${workspaceId}`
+
+    // 서버 스냅샷 업데이트 (셀 단위)
+    const snapshot = workspaceSheets.get(workspaceId)
+    if (snapshot && snapshot.sheets) {
+      const sheetId = Object.keys(snapshot.sheets)[0]
+      if (sheetId) {
+        if (!snapshot.sheets[sheetId].cellData) {
+          snapshot.sheets[sheetId].cellData = {}
+        }
+        if (!snapshot.sheets[sheetId].cellData[row]) {
+          snapshot.sheets[sheetId].cellData[row] = {}
+        }
+        snapshot.sheets[sheetId].cellData[row][column] = { v: value }
+      }
+    }
+
+    // 다른 사용자에게 브로드캐스트
+    socket.to(roomName).emit('cellChanged', { row, column, value, username })
+    console.log(`📊 ${username} changed cell [${row}, ${column}] = ${value}`)
+  })
+
+  // 셀 선택/커서 업데이트
+  socket.on('cellSelect', ({ username, workspaceId, row, column, color }) => {
     const roomName = `spreadsheet-${workspaceId}`
     const cursors = getCursors(workspaceId)
 
@@ -156,19 +179,15 @@ io.on('connection', (socket) => {
       username,
       row,
       column,
-      sheetIndex,
       color,
       timestamp: Date.now()
     }
 
     cursors.set(socket.id, cursorInfo)
-
-    // Broadcast cursor update to all other users in the room
     socket.to(roomName).emit('cursorUpdate', cursorInfo)
-    console.log(`📍 ${username} selected cell [${row}, ${column}] in sheet ${sheetIndex}`)
   })
 
-  // Handle cursor leave (when user deselects or leaves)
+  // 커서 제거
   socket.on('cellDeselect', ({ workspaceId }) => {
     const roomName = `spreadsheet-${workspaceId}`
     const cursors = getCursors(workspaceId)
@@ -176,24 +195,7 @@ io.on('connection', (socket) => {
     if (cursors.has(socket.id)) {
       cursors.delete(socket.id)
       socket.to(roomName).emit('cursorRemove', { socketId: socket.id })
-      console.log(`📍 Cursor removed for socket ${socket.id}`)
     }
-  })
-
-  socket.on('spreadsheetChange', ({ data, workspaceId = 'default' }) => {
-    // Update the server-side state
-    workspaceSheets.set(workspaceId, data)
-    console.log(`💾 Spreadsheet state saved for workspace ${workspaceId}`)
-
-    // We do NOT broadcast full data update here to avoid conflicts with Op-based sync.
-    // Ops are used for realtime sync. This event determines the "checkpoint" or "full state" for new users.
-  })
-
-  socket.on('spreadsheetOp', ({ ops, workspaceId = 'default' }) => {
-    const roomName = `spreadsheet-${workspaceId}`
-    console.log(`📤 Broadcasting spreadsheet operations to ${roomName}:`, ops)
-    // Broadcast operations to other users in the same workspace
-    socket.to(`spreadsheet-${workspaceId}`).emit('spreadsheetOp', ops)
   })
 
   socket.on('getUsers', ({ workspaceId = 'default' }) => {

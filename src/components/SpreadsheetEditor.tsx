@@ -44,6 +44,7 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
     const [remoteCursors, setRemoteCursors] = useState<Map<string, CursorInfo>>(new Map())
     const [currentUsername, setCurrentUsername] = useState('')
     const [userColor, setUserColor] = useState('')
+    const [exportDropdownOpen, setExportDropdownOpen] = useState(false)
 
     // Univer 초기화 + Socket.IO 연결
     useEffect(() => {
@@ -338,6 +339,121 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
         }
     }
 
+    // Univer IWorkbookData 시트 하나를 row/col 2D 배열로 변환
+    const sheetDataToRows = (sheetData: any): any[][] => {
+        const cellData = sheetData?.cellData as Record<number, Record<number, { v?: any; f?: string }>> | undefined
+        if (!cellData) return []
+
+        const rowNums = Object.keys(cellData).map(Number)
+        if (rowNums.length === 0) return []
+
+        const maxRow = Math.max(...rowNums)
+        const maxCol = Math.max(...rowNums.flatMap(r => Object.keys(cellData[r]).map(Number)))
+
+        const result: any[][] = []
+        for (let r = 0; r <= maxRow; r++) {
+            const row: any[] = []
+            for (let c = 0; c <= maxCol; c++) {
+                const cell = cellData[r]?.[c]
+                row.push(cell?.f ?? cell?.v ?? '')
+            }
+            result.push(row)
+        }
+        return result
+    }
+
+    // 파일 다운로드 헬퍼
+    const downloadBlob = (buffer: ArrayBuffer | Buffer, filename: string, mimeType: string) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const blob = new Blob([buffer as any], { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
+    // xlsx 내보내기
+    const exportToXLSX = async () => {
+        if (!univerRef.current) return
+        setExportDropdownOpen(false)
+
+        const workbook = univerRef.current.getActiveWorkbook()
+        if (!workbook) return
+
+        const snapshot = workbook.save()
+        const ExcelJS = (await import('exceljs')).default
+
+        const wb = new ExcelJS.Workbook()
+
+        for (const sheetData of Object.values(snapshot?.sheets ?? {})) {
+            const data = sheetData as any
+            const ws = wb.addWorksheet(data?.name ?? 'Sheet1')
+            const rows = sheetDataToRows(data)
+            if (rows.length > 0) ws.addRows(rows)
+        }
+
+        const buffer = await wb.xlsx.writeBuffer()
+        downloadBlob(buffer, 'spreadsheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        console.log('✅ XLSX 내보내기 완료')
+    }
+
+    // xlsm 내보내기 (xlsx 포맷에 .xlsm 확장자)
+    const exportToXLSM = async () => {
+        if (!univerRef.current) return
+        setExportDropdownOpen(false)
+
+        const workbook = univerRef.current.getActiveWorkbook()
+        if (!workbook) return
+
+        const snapshot = workbook.save()
+        const ExcelJS = (await import('exceljs')).default
+
+        const wb = new ExcelJS.Workbook()
+
+        for (const sheetData of Object.values(snapshot?.sheets ?? {})) {
+            const data = sheetData as any
+            const ws = wb.addWorksheet(data?.name ?? 'Sheet1')
+            const rows = sheetDataToRows(data)
+            if (rows.length > 0) ws.addRows(rows)
+        }
+
+        // xlsm은 xlsx와 동일한 포맷으로 생성 후 확장자만 변경
+        const buffer = await wb.xlsx.writeBuffer()
+        downloadBlob(buffer, 'spreadsheet.xlsm', 'application/vnd.ms-excel.sheet.macroEnabled.12')
+        console.log('✅ XLSM 내보내기 완료')
+    }
+
+    // CSV 내보내기 (활성 시트 기준)
+    const exportToCSV = async () => {
+        if (!univerRef.current) return
+        setExportDropdownOpen(false)
+
+        const workbook = univerRef.current.getActiveWorkbook()
+        if (!workbook) return
+
+        const snapshot = workbook.save()
+        const ExcelJS = (await import('exceljs')).default
+
+        const firstSheet = Object.values(snapshot?.sheets ?? {})[0] as any
+        if (!firstSheet) return
+
+        const wb = new ExcelJS.Workbook()
+        const ws = wb.addWorksheet(firstSheet?.name ?? 'Sheet1')
+        const rows = sheetDataToRows(firstSheet)
+        if (rows.length > 0) ws.addRows(rows)
+
+        const buffer = await wb.csv.writeBuffer()
+        // BOM 추가 (한글 깨짐 방지)
+        const bom = new Uint8Array([0xEF, 0xBB, 0xBF])
+        const combined = new Uint8Array(bom.length + buffer.byteLength)
+        combined.set(bom, 0)
+        combined.set(new Uint8Array(buffer), bom.length)
+        downloadBlob(combined.buffer, 'spreadsheet.csv', 'text/csv;charset=utf-8;')
+        console.log('✅ CSV 내보내기 완료')
+    }
+
     const formatLastSaved = () => {
         if (!lastSaved) return '저장 안됨'
         const now = new Date()
@@ -415,6 +531,52 @@ export default function SpreadsheetEditor({ workspaceId }: SpreadsheetEditorProp
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                     </svg>
                                     <span>{formatLastSaved()}</span>
+                                </>
+                            )}
+                        </div>
+
+                        {/* 내보내기 드롭다운 */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setExportDropdownOpen(prev => !prev)}
+                                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all shadow-md hover:shadow-lg font-semibold flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                내보내기
+                                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+
+                            {exportDropdownOpen && (
+                                <>
+                                    {/* 바깥 클릭 시 닫기 */}
+                                    <div className="fixed inset-0 z-10" onClick={() => setExportDropdownOpen(false)} />
+                                    <div className="absolute right-0 mt-2 w-44 bg-white rounded-lg shadow-xl border border-gray-200 z-20 overflow-hidden">
+                                        <button
+                                            onClick={exportToXLSX}
+                                            className="w-full px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-3 transition-colors"
+                                        >
+                                            <span className="text-lg">📊</span>
+                                            .xlsx (Excel)
+                                        </button>
+                                        <button
+                                            onClick={exportToXLSM}
+                                            className="w-full px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-3 transition-colors border-t border-gray-100"
+                                        >
+                                            <span className="text-lg">📋</span>
+                                            .xlsm (매크로 포함)
+                                        </button>
+                                        <button
+                                            onClick={exportToCSV}
+                                            className="w-full px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-3 transition-colors border-t border-gray-100"
+                                        >
+                                            <span className="text-lg">📄</span>
+                                            .csv
+                                        </button>
+                                    </div>
                                 </>
                             )}
                         </div>

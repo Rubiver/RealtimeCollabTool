@@ -5,7 +5,10 @@
       "WebFetch(domain:docs.univer.ai)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:univer.ai)",
-      "Bash(npx next build:*)"
+      "Bash(npx next build:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)"
     ]
   }
 }
